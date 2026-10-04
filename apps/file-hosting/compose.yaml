@@ -1,0 +1,14 @@
+services:
+  file-hosting:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: mc-build-updater/file-hosting:latest
+    ports:
+      - "1447:1447"
+    environment:
+      ADDR: ":1447"
+      FILES_PATH: /data
+    volumes:
+      - ./files:/data
+    restart: unless-stopped

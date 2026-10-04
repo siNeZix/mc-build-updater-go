@@ -6,16 +6,18 @@
 | --- | --- | --- |
 | Go 1.26+ | сборка, тесты, Air | `go version` |
 | GNU Make | единый интерфейс | `make --version` |
-| Docker Desktop | только production server | `docker version` |
+| Docker Desktop | только ручной запуск Compose server | `docker version` |
 
-`air` отдельно устанавливать не нужно: `make dev-server` и `make dev-client` запускают его через `go run github.com/air-verse/air@latest`. Первый запуск скачает зависимость в Go module cache.
+`air` отдельно устанавливать не нужно: `make dev-s` и `make dev-c` запускают его через `go run github.com/air-verse/air@latest`. Первый запуск скачает зависимость в Go module cache.
+
+Цели `make` загружают переменные из `.env` в корне репозитория. При прямом запуске собранный `.exe` загружает `.env` рядом с собой. Шаблон: `.env.example`.
 
 ## Ежедневный workflow
 
 ### Server
 
 ```powershell
-make dev-server
+make dev-s
 ```
 
 - Запускается **нативно**, слушает `http://localhost:1447`.
@@ -34,27 +36,20 @@ Invoke-WebRequest http://localhost:1447/map/update
 Сначала запусти server, затем отдельным терминалом:
 
 ```powershell
-make dev-client
+make dev-c
 ```
 
 - Запускается **нативно** с флагом `--dev`.
 - В dev всегда использует `http://localhost:1447/`, даже если передан `--file-hosting-url`; self-update, его очистка и стартовая пауза отключены, HTTP timeout — 15 секунд.
 - Working directory — `apps/mc-build-updater`; там создаются runtime-файлы и каталог `mods/`.
-
-### Оба приложения
-
-```powershell
-make dev
-```
-
-`make` запускает две цели параллельно. Останавливай процесс через `Ctrl+C` в этом терминале.
+- `dev-c` запускай после `dev-s`: клиент выполняет синхронизацию и завершается, а Air остаётся наблюдать за исходниками для следующего запуска после их изменения.
 
 ## Тесты и статический анализ
 
 | Область | Команда |
 | --- | --- |
-| Server | `make test-server` |
-| Client | `make test-client` |
+| Server | `make test-s` |
+| Client | `make test-c` |
 | Оба модуля | `make test` |
 | Форматирование | `make fmt` |
 | Дополнительная проверка server | `cd apps/file-hosting; go vet ./...` |
@@ -77,43 +72,46 @@ go vet ./...
 
 Запускай эти две команды из директории соответствующего модуля, а не из корня.
 
-## Сборка и запуск production
+## Сборка и запуск
 
 ### Server
 
 ```powershell
-make build-server
-make start-server
-make stop
+make build-s
+make start-s
+make start-s-dev
 ```
 
-- Используется `apps/file-hosting/compose.yaml`.
-- Порт хоста: `1447`.
-- `apps/file-hosting/files/` монтируется в контейнер как `/data` и **не** попадает в Docker image.
-- Для этих команд Docker Desktop daemon должен быть запущен.
+- `build-s` создаёт `build/server/file-hosting.exe`.
+- `start-s` всегда сначала выполняет `build-s`, затем запускает binary с working directory `apps/file-hosting`.
+- У server нет флага `--dev`, поэтому `start-s-dev` равнозначна `start-s`: нативный запуск без Air.
+- Server слушает порт `1447` и использует публикуемые файлы из `apps/file-hosting/files/`.
+- Docker в Makefile не используется. Для ручного Compose-развёртывания выполни `docker compose -f apps/file-hosting/compose.yaml up --detach --build`.
 
 Проверка:
 
 ```powershell
-docker compose -f apps/file-hosting/compose.yaml ps
 Invoke-RestMethod http://localhost:1447/map/version
 ```
 
 ### Client
 
 ```powershell
-make build-client
-make start-client
+make build-c
+make start-c
+make start-c-dev
 ```
 
 Создаются Windows-бинарники:
 
 ```text
-apps/mc-build-updater/build/mc-build-updater.exe
-apps/mc-build-updater/build/mc-bu-utils.exe
+build/client/mc-build-updater.exe
+build/client/mc-bu-utils.exe
 ```
 
-`make start-client` сначала пересобирает клиент, затем запускает `.exe` из каталога `apps/mc-build-updater`.
+`make start-c` сначала пересобирает клиент, затем запускает `.exe` с working directory `apps/mc-build-updater`: runtime-файлы и `mods/` остаются в каталоге приложения.
+
+`make start-c-dev` запускает тот же binary с `--dev`, но без Air: client использует `http://localhost:1447/`, отключает self-update и стартовую паузу.
 
 ### Release клиента
 
@@ -128,27 +126,24 @@ git push gitlab v1.2.3
 Обе CI собирают `windows/amd64` `mc-build-updater.exe`, генерируют `checksums.txt` с SHA-256 и публикуют их в stable release. Локальную release-сборку можно получить так:
 
 ```powershell
-make build-client CLIENT_VERSION=v1.2.3
+make build-c CLIENT_VERSION=v1.2.3
 ```
 
 GitLab release-job использует защищённую CI/CD-переменную `GITLAB_RELEASE_TOKEN` с областью `api`. GitHub по умолчанию использует встроенный token, либо секрет `RELEASE_TOKEN` с `contents: write`.
 
 Проверка `go vet` запускается внутри каждого Go-модуля (`apps/file-hosting` и `apps/mc-build-updater`): в корне workspace команда `go vet ./...` неприменима, потому что там нет корневого Go-модуля.
 
-> Не запускай `make start` по умолчанию: он одновременно поднимает production server и запускает client.
-
 ## Типичные проблемы
 
-### `make build-server`: не удаётся подключиться к Docker API
+### Server не запускается через `make start-s`
 
-Запусти Docker Desktop и дождись состояния Running. Проверь:
+`make start-s` не использует Docker. Убедись, что порт `1447` не занят:
 
 ```powershell
-docker version
-docker context ls
+Get-NetTCPConnection -LocalPort 1447 -ErrorAction SilentlyContinue
 ```
 
-После этого повтори `make build-server`.
+Заверши процесс, занимающий порт, затем повтори `make start-s`.
 
 ### Server запускается, но новые файлы отсутствуют в `/map`
 
@@ -172,5 +167,5 @@ Invoke-WebRequest http://localhost:1447/map/update
 Переменная среды имеет приоритет над режимом:
 
 ```powershell
-.\apps\mc-build-updater\build\mc-build-updater.exe --file-hosting-url http://host:1447/
+./build/client/mc-build-updater.exe --file-hosting-url http://host:1447/
 ```

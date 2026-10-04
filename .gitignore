@@ -1,4 +1,7 @@
 # Go build output and development tooling
+/build/
+.env
+!.env.example
 bin/
 tmp/
 coverage.out
@@ -17,6 +20,7 @@ dist/
 *.tsbuildinfo
 
 # Client runtime state (created beside executable during development)
+# Старое расположение артефактов: новые цели Makefile его не используют.
 apps/mc-build-updater/build/
 apps/mc-build-updater/tmp/
 apps/mc-build-updater/mods/
@@ -26,6 +30,9 @@ apps/mc-build-updater/mm.json
 apps/mc-build-updater/mc-build-updater.exe.new
 apps/mc-build-updater/mc-build-updater.updater.exe
 apps/mc-build-updater/release/
+
+# Runtime SQLite map of file-hosting.
+apps/file-hosting/files/.file-hosting.sqlite*
 
 # Исполняемые файлы и архивы release не попадают в репозиторий.
 *.exe

@@ -78,13 +78,13 @@ GET /map?dir=mods&branch=<Branch>
 ```powershell
 cd apps/mc-build-updater
 $env:FILE_HOSTING_TOKEN = '...'
-.\build\mc-bu-utils.exe upload-mods --file-hosting-url http://host:1447/ --workers 8
+../../build/client/mc-bu-utils.exe upload-mods --file-hosting-url http://host:1447/ --workers 8
 ```
 
 Для локальной публикации запусти server с тем же `FILE_HOSTING_TOKEN`, затем:
 
 ```powershell
-.\build\mc-bu-utils.exe upload-mods --dev --workers 8
+../../build/client/mc-bu-utils.exe upload-mods --dev --workers 8
 ```
 
 `--dev` всегда использует `http://localhost:1447/` и игнорирует `--file-hosting-url`; токен остаётся обязательным, чтобы локальный режим не ослаблял авторизацию REST API.
@@ -92,3 +92,6 @@ $env:FILE_HOSTING_TOKEN = '...'
 Команда сканирует только прямые регулярные файлы в `mods/`, получает `/map`, вычисляет SHA-1 и отправляет `PUT /api/files/mods/<name>` только для новых или изменённых файлов. Удаления на server не выполняет. Токен обязателен и передаётся как Bearer.
 
 SFTP, SSH-ключи и переменные `MC_BU_SFTP_*` не используются.
+
+
+При обычном запуске `mc-bu-utils.exe` загружает `.env` из каталога рядом с executable. Цели `make` загружают `.env` из корня репозитория.

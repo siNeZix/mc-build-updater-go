@@ -296,6 +296,7 @@ func (c *Client) getJSON(relativeURL string, target any) error {
 }
 
 func (c *Client) resolve(relativeURL string) string {
-	resolved := c.baseURL.ResolveReference(&url.URL{Path: relativeURL})
+	relative, _ := url.Parse(relativeURL)
+	resolved := c.baseURL.ResolveReference(relative)
 	return resolved.String()
 }

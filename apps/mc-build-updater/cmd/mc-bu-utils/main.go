@@ -7,11 +7,15 @@ import (
 	"path/filepath"
 
 	"github.com/sinezix/mc-build-updater-go/mc-build-updater/internal/console"
+	"github.com/sinezix/mc-build-updater-go/mc-build-updater/internal/envfile"
 	"github.com/sinezix/mc-build-updater-go/mc-build-updater/internal/filehosting"
 	"github.com/sinezix/mc-build-updater-go/mc-build-updater/internal/uploader"
 )
 
 func main() {
+	if err := envfile.LoadNextToExecutable(); err != nil {
+		console.Warning("не удалось загрузить .env: %v", err)
+	}
 	if len(os.Args) < 2 || os.Args[1] != "upload-mods" {
 		fmt.Fprintln(os.Stderr, "использование: mc-bu-utils upload-mods [--dev] [--file-hosting-url URL] [--workers N]")
 		os.Exit(2)

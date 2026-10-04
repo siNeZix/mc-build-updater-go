@@ -6,10 +6,14 @@ import (
 	"os"
 
 	"github.com/sinezix/mc-build-updater-go/file-hosting/internal/console"
+	"github.com/sinezix/mc-build-updater-go/file-hosting/internal/envfile"
 	"github.com/sinezix/mc-build-updater-go/file-hosting/internal/httpserver"
 )
 
 func main() {
+	if err := envfile.LoadNextToExecutable(); err != nil {
+		console.Warning("не удалось загрузить .env: %v", err)
+	}
 	addr := flag.String("addr", valueFromEnv("ADDR", ":1447"), "HTTP listen address")
 	filesPath := flag.String("files-path", valueFromEnv("FILES_PATH", "files"), "каталог публикуемых файлов")
 	flag.Parse()

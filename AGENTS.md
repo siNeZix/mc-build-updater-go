@@ -21,7 +21,7 @@
 ## Суть проекта
 
 - Это Go-монорепозиторий из двух **независимых Go-модулей**, связанных `go.work`.
-- `apps/file-hosting` (`server`) строит карту файлов и отдаёт файлы по HTTP. Dev нативный; production только Docker Compose.
+- `apps/file-hosting` (`server`) строит карту файлов и отдаёт файлы по HTTP. Dev, build и start нативные; Compose остаётся ручным production-вариантом.
 - `apps/mc-build-updater` (`client`) — Windows CLI для синхронизации Minecraft-модов, self-update и SFTP-утилита.
 - `server` и `client` связаны публичным HTTP-контрактом. Не меняй маршруты, JSON-поля, SHA-1 или правила поиска файлов без явного согласования и обновления `docs/contracts.md`.
 
@@ -30,24 +30,26 @@
 Работай из корня репозитория:
 
 ```powershell
-make dev-server       # server нативно, hot reload, :1447
-make dev-client       # client нативно, hot reload, localhost:1447
-make test-server
-make test-client
+make dev-s            # server нативно, hot reload, :1447
+make dev-c            # client нативно, hot reload, localhost:1447
+make test-s
+make test-c
 make test
-make build-client     # Windows .exe
-make build-server     # Docker image; Docker Desktop должен работать
-make start-server     # production server через Compose
-make stop
+make build-c          # Windows .exe в build/client
+make build-s          # server .exe в build/server
+make start-s          # build-s и нативный запуск server
+make start-c          # build-c и нативный запуск client
+make start-s-dev      # нативный server без Air
+make start-c-dev      # нативный client --dev без Air
 ```
 
-Не запускай `make start` без явной необходимости: он стартует production server и клиентский `.exe`.
+Общие цели `build`, `test` и `fmt` запускают обе области. Для одного приложения используй суффикс: `-c` — client, `-s` — server.
 
 ## Границы и правила
 
 - Не объединяй модули в один `go.mod`; зависимости server и client независимы.
-- Не добавляй Docker в dev workflow. `make dev-server` и `make dev-client` должны работать нативно через Air.
-- Не коммить runtime-артефакты: `apps/mc-build-updater/build/`, `mods/`, `7z.exe`, логи и временные файлы уже в `.gitignore`.
+- Не добавляй Docker в Makefile и dev workflow. `make dev-s` и `make dev-c` должны работать нативно через Air.
+- Не коммить runtime-артефакты: `build/`, `mods/`, `7z.exe`, логи и временные файлы уже в `.gitignore`.
 - Файлы, публикуемые server, лежат в `apps/file-hosting/files/` и намеренно версионируются.
 - Не возвращай секреты в код. SFTP настраивается только переменными окружения из `docs/mc-build-updater.md`.
 - SHA-1 и MD5 здесь — требования совместимости старого протокола, не криптографические механизмы безопасности.

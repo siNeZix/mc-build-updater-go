@@ -17,7 +17,7 @@ import (
 func TestDownloadVerifiedDoesNotBlockWhenAllRangeWorkersFail(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		if request.Header.Get("Range") == "" {
-			t.Error("?????????????????? Range-????????????")
+			t.Error("ожидается Range-запрос")
 		}
 		http.Error(response, "unavailable", http.StatusServiceUnavailable)
 	}))
@@ -36,18 +36,42 @@ func TestDownloadVerifiedDoesNotBlockWhenAllRangeWorkersFail(t *testing.T) {
 	select {
 	case err := <-completed:
 		if err == nil {
-			t.Fatal("DownloadVerified ???????????? ?????????????? ???????????? Range-????????????????")
+			t.Fatal("DownloadVerified должен вернуть ошибку Range-загрузки")
 		}
 	case <-time.After(2 * time.Second):
-		t.Fatal("DownloadVerified ?????????? ?????? ?????????????? ???????? Range-????????????????????")
+		t.Fatal("DownloadVerified завис при ошибках всех Range-работников")
 	}
 }
 
+func TestBranchModsMapSendsQueryParameters(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/map" {
+			t.Fatalf("путь запроса = %q, ожидается /map", request.URL.Path)
+		}
+		if got := request.URL.Query().Get("dir"); got != "mods" {
+			t.Fatalf("параметр dir = %q, ожидается mods", got)
+		}
+		if got := request.URL.Query().Get("branch"); got != "dead-inside-land" {
+			t.Fatalf("параметр branch = %q", got)
+		}
+		response.Header().Set("Content-Type", "application/json")
+		_, _ = response.Write([]byte("[]"))
+	}))
+	defer server.Close()
+
+	client, err := NewWithTimeout(server.URL, time.Second)
+	if err != nil {
+		t.Fatalf("NewWithTimeout: %v", err)
+	}
+	if _, err := client.BranchModsMap("dead-inside-land"); err != nil {
+		t.Fatalf("BranchModsMap: %v", err)
+	}
+}
 
 func TestNewWithTimeoutValidatesAndNormalizesURL(t *testing.T) {
 	for _, rawURL := range []string{"", "ftp://example.test", "http:///missing-host"} {
 		if _, err := NewWithTimeout(rawURL, time.Second); err == nil {
-			t.Fatalf("NewWithTimeout(%q) ???????????? ?????????????? ????????????", rawURL)
+			t.Fatalf("NewWithTimeout(%q) должен вернуть ошибку", rawURL)
 		}
 	}
 	client, err := NewWithTimeout("https://example.test/base", 0)
@@ -79,11 +103,11 @@ func TestMapsAndDownload(t *testing.T) {
 	}
 	mods, err := client.ModsMap("branch")
 	if err != nil || len(mods) != 1 || mods[0].Path != "C:/mods/a.jar" {
-		t.Fatalf("ModsMap = %#v, ???????????? = %v", mods, err)
+		t.Fatalf("ModsMap = %#v, ошибка = %v", mods, err)
 	}
 	entries, err := client.FileMap()
 	if err != nil || len(entries) != 1 || entries[0].Name != "a.jar" {
-		t.Fatalf("FileMap = %#v, ???????????? = %v", entries, err)
+		t.Fatalf("FileMap = %#v, ошибка = %v", entries, err)
 	}
 	destination := filepath.Join(t.TempDir(), "nested", "a.jar")
 	if err := client.Download("mods/a.jar", destination, "1/1"); err != nil {
@@ -91,7 +115,7 @@ func TestMapsAndDownload(t *testing.T) {
 	}
 	contents, err := os.ReadFile(destination)
 	if err != nil || string(contents) != "abc" {
-		t.Fatalf("?????????????????? ???????? = %q, ???????????? = %v", contents, err)
+		t.Fatalf("скачанный файл = %q, ошибка = %v", contents, err)
 	}
 }
 
@@ -101,7 +125,7 @@ func TestDownloadVerifiedRangeAndChecksum(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		rangeHeader := r.Header.Get("Range")
 		if rangeHeader == "" {
-			t.Fatal("?????????????????? Range")
+			t.Fatal("ожидается Range")
 		}
 		var start, end int
 		if _, err := fmt.Sscanf(rangeHeader, "bytes=%d-%d", &start, &end); err != nil {
@@ -125,10 +149,10 @@ func TestDownloadVerifiedRangeAndChecksum(t *testing.T) {
 	}
 	got, _ := os.ReadFile(destination)
 	if string(got) != string(contents) {
-		t.Fatal("Range-???????????????? ???????????????? ???????????????? ????????????????????")
+		t.Fatal("Range-загрузка записала неверное содержимое")
 	}
 	if err := client.DownloadVerified("mods/range.jar", filepath.Join(t.TempDir(), "bad.jar"), "", strings.Repeat("0", 40), int64(len(contents))); err == nil {
-		t.Fatal("???????????????? SHA-1 ???????????? ?????????????? ????????????")
+		t.Fatal("неверный SHA-1 должен вернуть ошибку")
 	}
 }
 
@@ -139,14 +163,14 @@ func TestUploadSendsTokenAndReportsHTTPError(t *testing.T) {
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPut || r.URL.Path != "/api/files/mods/mod.jar" {
-			t.Fatalf("???????????? = %s %s", r.Method, r.URL.Path)
+			t.Fatalf("запрос = %s %s", r.Method, r.URL.Path)
 		}
 		if r.Header.Get("Authorization") != "Bearer token" {
 			t.Fatalf("Authorization = %q", r.Header.Get("Authorization"))
 		}
 		body, _ := io.ReadAll(r.Body)
 		if string(body) != "mod" {
-			t.Fatalf("???????? = %q", body)
+			t.Fatalf("тело = %q", body)
 		}
 		w.WriteHeader(http.StatusCreated)
 	}))
@@ -162,4 +186,3 @@ func sha1Hex(contents []byte) string {
 	sum := sha1.Sum(contents)
 	return hex.EncodeToString(sum[:])
 }
-

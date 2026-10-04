@@ -14,6 +14,7 @@ import (
 	"github.com/sinezix/mc-build-updater-go/mc-build-updater/internal/branch"
 	"github.com/sinezix/mc-build-updater-go/mc-build-updater/internal/config"
 	"github.com/sinezix/mc-build-updater-go/mc-build-updater/internal/console"
+	"github.com/sinezix/mc-build-updater-go/mc-build-updater/internal/envfile"
 	"github.com/sinezix/mc-build-updater-go/mc-build-updater/internal/filehosting"
 	"github.com/sinezix/mc-build-updater-go/mc-build-updater/internal/modsync"
 	"github.com/sinezix/mc-build-updater-go/mc-build-updater/internal/remote"
@@ -24,6 +25,9 @@ import (
 var version = "dev"
 
 func main() {
+	if err := envfile.LoadNextToExecutable(); err != nil {
+		console.Warning("не удалось загрузить .env: %v", err)
+	}
 	development := flag.Bool("dev", false, "использовать локальный file-hosting и пропустить self-update")
 	updated := flag.Bool("updated", false, "очистить временные файлы обновления")
 	createModsMap := flag.Bool("mm", false, "записать локальную карту checksum модов в mm.json")

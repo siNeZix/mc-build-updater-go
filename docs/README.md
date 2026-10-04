@@ -18,7 +18,7 @@
 - `mc-build-updater` имеет тесты локального конфига и карты локальных модов.
 - Self-update клиента получает stable release с GitHub, а при ошибке GitHub — с GitLab; оба release собираются CI по тегам `vX.Y.Z`.
 - `make test`, `go build ./...` и `go vet ./...` для обоих модулей проходили успешно при создании репозитория.
-- Production-сборка server требует запущенный Docker Desktop. Если Docker daemon выключен, `make build-server` и `make start-server` ожидаемо завершаются ошибкой подключения к Docker API.
+- `make` собирает и запускает оба приложения нативно; Docker не требуется. Compose-конфигурация server сохранена для ручного production-развёртывания.
 
 ## Структура
 
@@ -27,6 +27,7 @@
 ├─ AGENTS.md                         # обязательная точка входа нового агента
 ├─ docs/                             # эта документация
 ├─ Makefile                          # единый интерфейс разработки и сборки
+├─ build/                            # локальные артефакты build-c и build-s (не в Git)
 ├─ go.work                           # связывает два Go-модуля
 └─ apps/
    ├─ file-hosting/                  # server

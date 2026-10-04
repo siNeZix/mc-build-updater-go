@@ -12,6 +12,8 @@
 
 Production Compose передаёт `FILE_HOSTING_TOKEN` из окружения host.
 
+При обычном запуске `file-hosting.exe` загружает `.env` из каталога рядом с executable. Цели `make` загружают `.env` из корня репозитория.
+
 ## SQLite-карта
 
 База находится рядом с публикуемыми файлами: `files/.file-hosting.sqlite` (в контейнере `/data/.file-hosting.sqlite`). Она хранит SHA-1, путь, имя, каталог, размер и версию карты.
@@ -27,7 +29,7 @@ REST PUT/DELETE сразу обновляют карту. Идентичный P
 ## Запуск и проверка
 
 ```powershell
-make dev-server
+make dev-s
 Invoke-RestMethod http://localhost:1447/map
 Invoke-WebRequest http://localhost:1447/map/update
 ```

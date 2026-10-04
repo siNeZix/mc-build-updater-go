@@ -3,7 +3,7 @@ tmp_dir = "tmp"
 
 [build]
   cmd = "go build -ldflags \"-X main.version=dev\" -o ./tmp/mc-build-updater.exe ./cmd/mc-build-updater"
-  bin = "tmp/mc-build-updater.exe --dev"
+  entrypoint = ["./tmp/mc-build-updater.exe", "--dev"]
   include_ext = ["go"]
   exclude_dir = ["build", "mods", "tmp"]
   stop_on_error = true

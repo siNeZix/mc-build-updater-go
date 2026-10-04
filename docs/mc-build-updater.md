@@ -1,6 +1,6 @@
 # Mc-build-updater (client)
 
-Windows CLI синхронизирует плоский каталог `mods/` с выбранной веткой Minecraft-сборки, обновляет свой `.exe` и публикует моды через REST API.
+Windows CLI синхронизирует плоский каталог `mods/` с выбранной веткой Minecraft-сборки, обновляет свой `.exe` из GitHub/GitLab Releases и публикует моды через REST API.
 
 Это отдельный Go-модуль. Зависимости не переносятся в `file-hosting`.
 
@@ -23,6 +23,36 @@ Windows CLI синхронизирует плоский каталог `mods/` �
 | 2 | Dev: `http://localhost:1447/`; production: `http://mc.sinezix.ru:1447/` |
 
 `MC_BU_FILE_HOSTING_URL` удалён.
+
+## Self-update
+
+Перед синхронизацией модов production-клиент проверяет latest stable release (`vX.Y.Z`) в публичных репозиториях:
+
+1. `https://github.com/siNeZix/mc-build-updater-go/releases`;
+2. `https://gitlab.com/siNeZix/mc-build-updater-go/-/releases` — только если GitHub недоступен, вернул некорректный ответ или release без нужных файлов.
+
+Release обязан содержать `mc-build-updater.exe` и `checksums.txt`. Перед заменой клиент проверяет SHA-256 из `checksums.txt`.
+
+- Учитываются только стабильные SemVer-теги формата `vX.Y.Z`; draft, prerelease и некорректные теги игнорируются.
+- При найденной более новой версии обновление обязательно: текущий процесс не синхронизирует моды, запускает временный процесс замены и завершается. Новая версия запускается сама и продолжает работу.
+- Если обе площадки недоступны, текущая версия продолжает синхронизацию модов.
+- В `--dev` self-update отключён. Сборка без release-тега имеет версию `dev` и также не проверяет обновления.
+- Версия release передаётся в бинарник через `-ldflags "-X main.version=vX.Y.Z"`.
+
+### Публикация release
+
+В GitHub и GitLab настроены независимые CI. После push тега `vX.Y.Z` каждая площадка выполняет тесты, собирает `windows/amd64` бинарник, создаёт `checksums.txt` и публикует stable release.
+
+Для GitLab в настройках CI/CD добавь защищённую переменную `GITLAB_RELEASE_TOKEN`: персональный access token с областью `api`. В GitHub workflow по умолчанию использует `github.token`; если репозиторий или правила организации не позволяют ему создавать release, добавь секрет `RELEASE_TOKEN` с правом `contents: write`.
+
+Push тега нужен в оба remote:
+
+```powershell
+git push origin v1.2.3
+git push gitlab v1.2.3
+```
+
+`apps/file-hosting` больше не хранит `config/remote.json`, архив обновления или `7z.exe`.
 
 ## Синхронизация
 

@@ -3,6 +3,8 @@
 .PHONY: help dev dev-server dev-client build build-server build-client start start-server start-client stop test test-server test-client fmt fmt-server fmt-client
 
 COMPOSE := docker compose -f apps/file-hosting/compose.yaml
+CLIENT_VERSION ?= dev
+CLIENT_LDFLAGS := -X main.version=$(CLIENT_VERSION)
 
 help:
 	@echo "Development: make dev-server | dev-client | dev"
@@ -25,7 +27,7 @@ build-server:
 	$(COMPOSE) build
 
 build-client:
-	cd apps/mc-build-updater && go build -trimpath -o build/mc-build-updater.exe ./cmd/mc-build-updater
+	cd apps/mc-build-updater && go build -trimpath -ldflags "$(CLIENT_LDFLAGS)" -o build/mc-build-updater.exe ./cmd/mc-build-updater
 	cd apps/mc-build-updater && go build -trimpath -o build/mc-bu-utils.exe ./cmd/mc-bu-utils
 
 build: build-server build-client

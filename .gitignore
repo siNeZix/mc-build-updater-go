@@ -23,13 +23,10 @@ apps/mc-build-updater/mods/
 apps/mc-build-updater/mc-mods-updater.config.yml
 apps/mc-build-updater/mc-mods-updater.log
 apps/mc-build-updater/mm.json
-apps/mc-build-updater/7z.exe
-apps/mc-build-updater/update.exe
-apps/mc-build-updater/mc-build-updater.7z
-apps/mc-build-updater/mods.7z
+apps/mc-build-updater/mc-build-updater.exe.new
+apps/mc-build-updater/mc-build-updater.updater.exe
+apps/mc-build-updater/release/
 
-# Keep distributable files served by file-hosting under version control.
+# Исполняемые файлы и архивы release не попадают в репозиторий.
 *.exe
-!apps/file-hosting/files/**/*.exe
 *.7z
-!apps/file-hosting/files/**/*.7z

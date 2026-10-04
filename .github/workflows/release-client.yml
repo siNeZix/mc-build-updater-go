@@ -1,0 +1,56 @@
+name: Релиз клиента
+
+on:
+  push:
+    tags:
+      - 'v[0-9]*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.26.3'
+
+      - name: Проверить tag
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+
+      - name: Проверить клиент
+        working-directory: apps/mc-build-updater
+        run: go test ./...
+
+      - name: Собрать Windows-клиент
+        working-directory: apps/mc-build-updater
+        env:
+          TAG: ${{ github.ref_name }}
+          GOOS: windows
+          GOARCH: amd64
+          CGO_ENABLED: '0'
+        run: |
+          mkdir -p dist
+          go build -trimpath -ldflags "-s -w -X main.version=$TAG" -o dist/mc-build-updater.exe ./cmd/mc-build-updater
+          cd dist
+          sha256sum mc-build-updater.exe > checksums.txt
+
+      - name: Создать GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$TAG" \
+            apps/mc-build-updater/dist/mc-build-updater.exe \
+            apps/mc-build-updater/dist/checksums.txt \
+            --verify-tag \
+            --title "$TAG" \
+            --generate-notes

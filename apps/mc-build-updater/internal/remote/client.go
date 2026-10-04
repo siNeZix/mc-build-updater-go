@@ -23,10 +23,6 @@ type FileMap struct {
 	Size int64  `json:"size"`
 }
 
-type RemoteConfig struct {
-	LastVersion string `json:"LastVersion"`
-}
-
 type Client struct {
 	baseURL *url.URL
 	http    *http.Client
@@ -50,14 +46,6 @@ func New(rawBaseURL string) (*Client, error) {
 		baseURL: baseURL,
 		http:    &http.Client{Timeout: 15 * time.Minute},
 	}, nil
-}
-
-func (c *Client) RemoteConfig() (RemoteConfig, error) {
-	var configuration RemoteConfig
-	if err := c.getJSON("config/remote.json", &configuration); err != nil {
-		return RemoteConfig{}, err
-	}
-	return configuration, nil
 }
 
 func (c *Client) ModsMap(branch string) ([]Mod, error) {

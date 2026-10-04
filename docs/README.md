@@ -16,6 +16,7 @@
 - Миграция обоих исходных TypeScript-проектов в Go выполнена.
 - `file-hosting` имеет unit-тест HTTP-контракта.
 - `mc-build-updater` имеет тесты локального конфига и карты локальных модов.
+- Self-update клиента получает stable release с GitHub, а при ошибке GitHub — с GitLab; оба release собираются CI по тегам `vX.Y.Z`.
 - `make test`, `go build ./...` и `go vet ./...` для обоих модулей проходили успешно при создании репозитория.
 - Production-сборка server требует запущенный Docker Desktop. Если Docker daemon выключен, `make build-server` и `make start-server` ожидаемо завершаются ошибкой подключения к Docker API.
 

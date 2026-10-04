@@ -18,14 +18,18 @@ import (
 	"github.com/sinezix/mc-build-updater-go/mc-build-updater/internal/selfupdate"
 )
 
-const version = "alpha.4"
+// version получает release-tag через -ldflags при release-сборке.
+var version = "dev"
 
 func main() {
-	development := flag.Bool("dev", false, "use local file-hosting and skip self-update")
-	updated := flag.Bool("updated", false, "cleanup update artifacts before starting")
-	createModsMap := flag.Bool("mm", false, "write local mods checksum map to mm.json")
-	applyUpdate := flag.Bool("apply-update", false, "apply a previously downloaded self-update")
-	fileHostingURL := flag.String("file-hosting-url", "", "file-hosting base URL")
+	development := flag.Bool("dev", false, "использовать локальный file-hosting и пропустить self-update")
+	updated := flag.Bool("updated", false, "очистить временные файлы обновления")
+	createModsMap := flag.Bool("mm", false, "записать локальную карту checksum модов в mm.json")
+	applyUpdate := flag.Bool("apply-update", false, "внутренний флаг замены обновления")
+	updateTarget := flag.String("update-target", "", "внутренний путь заменяемого файла")
+	updateReplacement := flag.String("update-replacement", "", "внутренний путь нового файла")
+	updateWorkingDirectory := flag.String("update-working-directory", "", "внутренний рабочий каталог обновления")
+	fileHostingURL := flag.String("file-hosting-url", "", "базовый URL file-hosting")
 	flag.Parse()
 
 	configureLog()
@@ -35,7 +39,7 @@ func main() {
 	}
 
 	if *applyUpdate {
-		if err := selfupdate.Apply(workingDirectory); err != nil {
+		if err := selfupdate.Apply(*updateTarget, *updateReplacement, *updateWorkingDirectory); err != nil {
 			log.Fatal(err)
 		}
 		return
@@ -51,8 +55,11 @@ func main() {
 		return
 	}
 	if *updated {
-		if err := selfupdate.Clean(workingDirectory); err != nil {
-			log.Printf("clean update artifacts: %v", err)
+		executablePath, err := os.Executable()
+		if err != nil {
+			log.Printf("определить путь для очистки обновления: %v", err)
+		} else if err := selfupdate.Clean(executablePath); err != nil {
+			log.Printf("очистить временные файлы обновления: %v", err)
 		}
 	}
 
@@ -64,16 +71,18 @@ func main() {
 
 	if !*development {
 		result, err := selfupdate.Run(selfupdate.Options{
-			WorkingDirectory: workingDirectory,
 			CurrentVersion:   version,
-			Remote:           client,
 			RuntimeOS:        runtime.GOOS,
+			WorkingDirectory: workingDirectory,
 		})
 		if err != nil {
 			log.Fatal(err)
 		}
+		if result.CheckError != nil {
+			log.Printf("не удалось проверить обновления: %v; продолжается текущая версия", result.CheckError)
+		}
 		if result.StartedReplacement {
-			log.Println("mc-build updater started")
+			log.Println("запущена замена клиента на новую версию")
 			return
 		}
 	}

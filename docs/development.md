@@ -115,6 +115,26 @@ apps/mc-build-updater/build/mc-bu-utils.exe
 
 `make start-client` сначала пересобирает клиент, затем запускает `.exe` из каталога `apps/mc-build-updater`.
 
+### Release клиента
+
+Release создаётся только tag-ами вида `vX.Y.Z`. Тег надо отправить в GitHub и GitLab, чтобы обе CI-площадки опубликовали идентичные release assets:
+
+```powershell
+git tag v1.2.3
+git push origin v1.2.3
+git push gitlab v1.2.3
+```
+
+Обе CI собирают `windows/amd64` `mc-build-updater.exe`, генерируют `checksums.txt` с SHA-256 и публикуют их в stable release. Локальную release-сборку можно получить так:
+
+```powershell
+make build-client CLIENT_VERSION=v1.2.3
+```
+
+GitLab release-job использует защищённую CI/CD-переменную `GITLAB_RELEASE_TOKEN` с областью `api`. GitHub по умолчанию использует встроенный token, либо секрет `RELEASE_TOKEN` с `contents: write`.
+
+Проверка `go vet` запускается внутри каждого Go-модуля (`apps/file-hosting` и `apps/mc-build-updater`): в корне workspace команда `go vet ./...` неприменима, потому что там нет корневого Go-модуля.
+
 > Не запускай `make start` по умолчанию: он одновременно поднимает production server и запускает client.
 
 ## Типичные проблемы

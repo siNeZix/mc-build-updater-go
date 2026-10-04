@@ -18,10 +18,11 @@ type Entry struct {
 	Path string `json:"path"`
 	Name string `json:"name"`
 	Dir  string `json:"dir"`
+	Size int64  `json:"size"`
 }
 
 // Build recursively scans root and returns a stable, deterministic map.
-func Build(root string) ([]Entry, error) {
+func Build(root string, skip func(string) bool) ([]Entry, error) {
 	absRoot, err := filepath.Abs(root)
 	if err != nil {
 		return nil, fmt.Errorf("resolve files root: %w", err)
@@ -43,8 +44,15 @@ func Build(root string) ([]Entry, error) {
 		if entry.IsDir() {
 			return nil
 		}
+		if skip != nil && skip(path) {
+			return nil
+		}
 		if !entry.Type().IsRegular() {
 			return nil
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
 		}
 
 		hash, err := SHA1(path)
@@ -64,6 +72,7 @@ func Build(root string) ([]Entry, error) {
 			Path: path,
 			Name: entry.Name(),
 			Dir:  directory,
+			Size: info.Size(),
 		})
 		return nil
 	})

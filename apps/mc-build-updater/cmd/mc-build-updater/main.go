@@ -115,9 +115,6 @@ func selectFileHostingURL(development bool, explicit string) string {
 	if explicit != "" {
 		return explicit
 	}
-	if fromEnvironment := os.Getenv("MC_BU_FILE_HOSTING_URL"); fromEnvironment != "" {
-		return fromEnvironment
-	}
 	if development {
 		return "http://localhost:1447/"
 	}

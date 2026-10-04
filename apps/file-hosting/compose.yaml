@@ -9,6 +9,7 @@ services:
     environment:
       ADDR: ":1447"
       FILES_PATH: /data
+      FILE_HOSTING_TOKEN: ${FILE_HOSTING_TOKEN:-}
     volumes:
       - ./files:/data
     restart: unless-stopped

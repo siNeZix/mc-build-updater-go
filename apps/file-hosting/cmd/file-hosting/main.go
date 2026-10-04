@@ -14,7 +14,7 @@ func main() {
 	filesPath := flag.String("files-path", valueFromEnv("FILES_PATH", "files"), "directory containing served files")
 	flag.Parse()
 
-	service, err := httpserver.New(*filesPath)
+	service, err := httpserver.New(*filesPath, os.Getenv("FILE_HOSTING_TOKEN"))
 	if err != nil {
 		log.Fatalf("initialize files map: %v", err)
 	}

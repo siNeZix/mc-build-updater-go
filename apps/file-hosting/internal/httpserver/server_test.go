@@ -2,11 +2,13 @@ package httpserver
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/sinezix/mc-build-updater-go/file-hosting/internal/filemap"
@@ -22,10 +24,11 @@ func TestMapAndDownloadRoutes(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	service, err := New(root)
+	service, err := New(root, "test-token")
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer service.Close()
 	server := httptest.NewServer(service.Handler())
 	defer server.Close()
 
@@ -67,5 +70,62 @@ func TestMapAndDownloadRoutes(t *testing.T) {
 	}
 	if !regexp.MustCompile(`^[a-f0-9]{6}:\d+$`).MatchString(version) {
 		t.Fatalf("unexpected version: %q", version)
+	}
+}
+
+func TestFileWriteAPIAndRange(t *testing.T) {
+	root := t.TempDir()
+	service, err := New(root, "test-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer service.Close()
+	server := httptest.NewServer(service.Handler())
+	defer server.Close()
+
+	request, err := http.NewRequest(http.MethodPut, server.URL+"/api/files/mods/example.jar", strings.NewReader("mod content"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Authorization", "Bearer test-token")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusCreated {
+		t.Fatalf("PUT: got %d", response.StatusCode)
+	}
+
+	request, err = http.NewRequest(http.MethodGet, server.URL+"/mods/example.jar", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Range", "bytes=0-2")
+	response, err = http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusPartialContent {
+		t.Fatalf("Range: got %d", response.StatusCode)
+	}
+	contents, _ := io.ReadAll(response.Body)
+	if string(contents) != "mod" {
+		t.Fatalf("range body: %q", contents)
+	}
+
+	request, err = http.NewRequest(http.MethodDelete, server.URL+"/api/files/mods/example.jar", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Authorization", "Bearer test-token")
+	response, err = http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusNoContent {
+		t.Fatalf("DELETE: got %d", response.StatusCode)
 	}
 }

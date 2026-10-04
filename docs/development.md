@@ -152,12 +152,5 @@ Invoke-WebRequest http://localhost:1447/map/update
 Переменная среды имеет приоритет над режимом:
 
 ```powershell
-$env:MC_BU_FILE_HOSTING_URL = 'http://host:1447/'
-.\apps\mc-build-updater\build\mc-build-updater.exe
-```
-
-Либо передай флаг:
-
-```powershell
 .\apps\mc-build-updater\build\mc-build-updater.exe --file-hosting-url http://host:1447/
 ```

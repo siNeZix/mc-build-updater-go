@@ -1,6 +1,8 @@
 package remote
 
 import (
+	"crypto/sha1"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -9,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -17,6 +20,7 @@ type FileMap struct {
 	Dir  string `json:"dir"`
 	Name string `json:"name"`
 	Hash string `json:"hash"`
+	Size int64  `json:"size"`
 }
 
 type RemoteConfig struct {
@@ -65,8 +69,19 @@ func (c *Client) ModsMap(branch string) ([]Mod, error) {
 }
 
 func (c *Client) FileMap() ([]FileMap, error) {
+	return c.fileMap("")
+}
+
+func (c *Client) BranchModsMap(branch string) ([]FileMap, error) {
+	return c.fileMap("map?dir=mods&branch=" + url.QueryEscape(branch))
+}
+
+func (c *Client) fileMap(relativeURL string) ([]FileMap, error) {
 	var entries []FileMap
-	if err := c.getJSON("map", &entries); err != nil {
+	if relativeURL == "" {
+		relativeURL = "map"
+	}
+	if err := c.getJSON(relativeURL, &entries); err != nil {
 		return nil, err
 	}
 	return entries, nil
@@ -110,6 +125,159 @@ func (c *Client) Download(relativeURL, destination, prefix string) error {
 	}
 	if err := os.Rename(temporaryPath, destination); err != nil {
 		return fmt.Errorf("move downloaded file into place: %w", err)
+	}
+	return nil
+}
+
+const rangeChunkSize int64 = 2 * 1024 * 1024
+
+// DownloadVerified uses four parallel 2 MiB ranges for files larger than 2 MiB.
+// Servers without Range support automatically fall back to Download.
+func (c *Client) DownloadVerified(relativeURL, destination, prefix, expectedHash string, size int64) error {
+	if size <= rangeChunkSize {
+		if err := c.Download(relativeURL, destination, prefix); err != nil {
+			return err
+		}
+		return verifySHA1(destination, expectedHash)
+	}
+	if err := os.MkdirAll(filepath.Dir(destination), 0o755); err != nil {
+		return fmt.Errorf("create download directory: %w", err)
+	}
+	temporary, err := os.CreateTemp(filepath.Dir(destination), ".download-*")
+	if err != nil {
+		return fmt.Errorf("create temporary download: %w", err)
+	}
+	temporaryPath := temporary.Name()
+	defer os.Remove(temporaryPath) //nolint:errcheck
+	if err := temporary.Truncate(size); err != nil {
+		temporary.Close()
+		return fmt.Errorf("allocate temporary download: %w", err)
+	}
+	temporary.Close()
+
+	type byteRange struct{ start, end int64 }
+	var ranges []byteRange
+	for start := int64(0); start < size; start += rangeChunkSize {
+		end := start + rangeChunkSize - 1
+		if end >= size {
+			end = size - 1
+		}
+		ranges = append(ranges, byteRange{start, end})
+	}
+	jobs := make(chan byteRange)
+	errors := make(chan error, len(ranges))
+	var workers sync.WaitGroup
+	for range min(4, len(ranges)) {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			for block := range jobs {
+				if err := c.downloadRange(relativeURL, temporaryPath, block.start, block.end, size); err != nil {
+					errors <- err
+					return
+				}
+			}
+		}()
+	}
+	for _, block := range ranges {
+		jobs <- block
+	}
+	close(jobs)
+	workers.Wait()
+	close(errors)
+	for err := range errors {
+		if err != nil {
+			if strings.Contains(err.Error(), "range unsupported") {
+				if downloadErr := c.Download(relativeURL, destination, prefix); downloadErr != nil {
+					return downloadErr
+				}
+				return verifySHA1(destination, expectedHash)
+			}
+			return err
+		}
+	}
+	if err := verifySHA1(temporaryPath, expectedHash); err != nil {
+		return err
+	}
+	if err := os.Remove(destination); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("replace download destination: %w", err)
+	}
+	if err := os.Rename(temporaryPath, destination); err != nil {
+		return fmt.Errorf("move downloaded file into place: %w", err)
+	}
+	return nil
+}
+
+func (c *Client) Upload(relativePath, filePath, token string) (int, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return 0, fmt.Errorf("open upload file: %w", err)
+	}
+	defer file.Close()
+	requestURL := c.resolve("api/files/") + (&url.URL{Path: relativePath}).EscapedPath()
+	request, err := http.NewRequest(http.MethodPut, requestURL, file)
+	if err != nil {
+		return 0, fmt.Errorf("create upload request: %w", err)
+	}
+	request.Header.Set("Authorization", "Bearer "+token)
+	response, err := c.http.Do(request)
+	if err != nil {
+		return 0, fmt.Errorf("upload %s: %w", relativePath, err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusCreated && response.StatusCode != http.StatusNoContent {
+		return 0, fmt.Errorf("upload %s: HTTP %d", relativePath, response.StatusCode)
+	}
+	return response.StatusCode, nil
+}
+
+func (c *Client) downloadRange(relativeURL, destination string, start, end, total int64) error {
+	request, err := http.NewRequest(http.MethodGet, c.resolve(relativeURL), nil)
+	if err != nil {
+		return err
+	}
+	request.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", start, end))
+	response, err := c.http.Do(request)
+	if err != nil {
+		return fmt.Errorf("download range: %w", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode == http.StatusOK {
+		return fmt.Errorf("range unsupported")
+	}
+	if response.StatusCode != http.StatusPartialContent {
+		return fmt.Errorf("download range: HTTP %d", response.StatusCode)
+	}
+	expectedRange := fmt.Sprintf("bytes %d-%d/%d", start, end, total)
+	if response.Header.Get("Content-Range") != expectedRange {
+		return fmt.Errorf("unexpected Content-Range %q", response.Header.Get("Content-Range"))
+	}
+	file, err := os.OpenFile(destination, os.O_WRONLY, 0)
+	if err != nil {
+		return fmt.Errorf("open temporary download: %w", err)
+	}
+	defer file.Close()
+	if _, err := file.Seek(start, io.SeekStart); err != nil {
+		return fmt.Errorf("seek temporary download: %w", err)
+	}
+	if _, err := io.CopyN(file, response.Body, end-start+1); err != nil {
+		return fmt.Errorf("write download range: %w", err)
+	}
+	return nil
+}
+
+func verifySHA1(filePath, expected string) error {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	digest := sha1.New() // #nosec G401 -- file-hosting protocol requires SHA-1.
+	if _, err := io.Copy(digest, file); err != nil {
+		return err
+	}
+	if actual := hex.EncodeToString(digest.Sum(nil)); actual != expected {
+		return fmt.Errorf("downloaded file SHA-1 mismatch: got %s, want %s", actual, expected)
 	}
 	return nil
 }

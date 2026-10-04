@@ -42,18 +42,14 @@ func (s Synchronizer) Sync(branch string) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	remoteMods, err := s.remote.ModsMap(branch)
-	if err != nil {
-		return Result{}, err
-	}
-	downloadMap, err := s.remote.FileMap()
+	downloadMap, err := s.remote.BranchModsMap(branch)
 	if err != nil {
 		return Result{}, err
 	}
 
-	remoteHashes := make(map[string]struct{}, len(remoteMods))
-	for _, mod := range remoteMods {
-		remoteHashes[mod.Hash] = struct{}{}
+	remoteHashes := make(map[string]struct{}, len(downloadMap))
+	for _, file := range downloadMap {
+		remoteHashes[file.Hash] = struct{}{}
 	}
 	localHashes := make(map[string]struct{}, len(local))
 	for _, mod := range local {
@@ -71,14 +67,10 @@ func (s Synchronizer) Sync(branch string) (Result, error) {
 		}
 	}
 
-	filesByHash := make(map[string]remote.FileMap, len(downloadMap))
+	var missing []remote.FileMap
 	for _, file := range downloadMap {
-		filesByHash[file.Hash] = file
-	}
-	var missing []remote.Mod
-	for _, mod := range remoteMods {
-		if _, exists := localHashes[mod.Hash]; !exists {
-			missing = append(missing, mod)
+		if _, exists := localHashes[file.Hash]; !exists {
+			missing = append(missing, file)
 		}
 	}
 	if len(missing) == 0 {
@@ -94,23 +86,14 @@ func (s Synchronizer) Sync(branch string) (Result, error) {
 		go func() {
 			defer workers.Done()
 			for job := range jobs {
-				if err := s.remote.Download("mods/"+job.file.Hash, filepath.Join(s.modsPath, job.file.Name), job.label); err != nil {
+				if err := s.remote.DownloadVerified("mods/"+job.file.Hash, filepath.Join(s.modsPath, job.file.Name), job.label, job.file.Hash, job.file.Size); err != nil {
 					errors <- err
 				}
 			}
 		}()
 	}
 
-	for index, mod := range missing {
-		file, exists := filesByHash[mod.Hash]
-		if !exists {
-			close(jobs)
-			workers.Wait()
-			return Result{}, fmt.Errorf("remote map has no file for mod checksum %s", mod.Hash)
-		}
-		if file.Name == "" {
-			file.Name = filepath.Base(mod.Path)
-		}
+	for index, file := range missing {
 		jobs <- downloadJob{file: file, label: fmt.Sprintf("%d/%d", index+1, len(missing))}
 	}
 	close(jobs)

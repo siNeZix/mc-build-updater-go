@@ -1,96 +1,83 @@
 package uploader
 
 import (
+	"crypto/sha1"
+	"encoding/hex"
 	"fmt"
 	"io"
-	"net"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 
-	"github.com/pkg/sftp"
-	"golang.org/x/crypto/ssh"
+	"github.com/sinezix/mc-build-updater-go/mc-build-updater/internal/remote"
 )
 
 type Config struct {
-	Host           string
-	Port           string
-	User           string
-	PrivateKeyPath string
-	LocalModsPath  string
-	RemoteModsPath string
-	Workers        int
+	BaseURL       string
+	Token         string
+	LocalModsPath string
+	Workers       int
 }
 
 type fileInfo struct {
 	name string
-	size int64
-}
-
-func ConfigFromEnvironment() (Config, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return Config{}, fmt.Errorf("resolve home directory: %w", err)
-	}
-	workingDirectory, err := os.Getwd()
-	if err != nil {
-		return Config{}, fmt.Errorf("resolve working directory: %w", err)
-	}
-
-	configuration := Config{
-		Host:           getEnv("MC_BU_SFTP_HOST", "mc.sinezix.ru"),
-		Port:           getEnv("MC_BU_SFTP_PORT", "22"),
-		User:           getEnv("MC_BU_SFTP_USER", "root"),
-		PrivateKeyPath: getEnv("MC_BU_SFTP_KEY_PATH", filepath.Join(home, ".ssh", "id_rsa")),
-		LocalModsPath:  getEnv("MC_BU_MODS_PATH", filepath.Join(workingDirectory, "mods")),
-		RemoteModsPath: getEnv("MC_BU_SFTP_REMOTE_MODS_PATH", "/root/file-hosting/files/mods/"),
-	}
-	return configuration, nil
+	path string
+	hash string
 }
 
 func UploadMissing(configuration Config) error {
+	if configuration.Token == "" {
+		return fmt.Errorf("FILE_HOSTING_TOKEN is required")
+	}
 	if configuration.Workers < 1 {
 		configuration.Workers = 1
 	}
-	remoteFiles, err := listRemote(configuration)
+	client, err := remote.New(configuration.BaseURL)
 	if err != nil {
 		return err
 	}
-	localFiles, err := listLocal(configuration.LocalModsPath)
+	files, err := listLocal(configuration.LocalModsPath)
 	if err != nil {
 		return err
 	}
-
-	missing := make([]fileInfo, 0)
-	for _, local := range localFiles {
-		if remoteSize, exists := remoteFiles[local.name]; !exists || remoteSize != local.size {
-			missing = append(missing, local)
+	mapEntries, err := client.FileMap()
+	if err != nil {
+		return err
+	}
+	remoteHashes := make(map[string]string)
+	for _, entry := range mapEntries {
+		if entry.Dir == "mods" {
+			remoteHashes[entry.Name] = entry.Hash
 		}
 	}
-	if len(missing) == 0 {
-		fmt.Println("No new mods to upload.")
+	var pending []fileInfo
+	for _, file := range files {
+		if remoteHashes[file.name] != file.hash {
+			pending = append(pending, file)
+		}
+	}
+	if len(pending) == 0 {
+		fmt.Println("Нет новых или изменённых модов.")
 		return nil
 	}
-
-	fmt.Printf("Uploading %d mod(s) with %d worker(s)\n", len(missing), configuration.Workers)
+	fmt.Printf("Загрузка %d мод(ов), потоков: %d\n", len(pending), min(configuration.Workers, len(pending)))
 	jobs := make(chan fileInfo)
-	errors := make(chan error, len(missing))
+	errors := make(chan error, len(pending))
 	var workers sync.WaitGroup
-	for index := 0; index < min(configuration.Workers, len(missing)); index++ {
+	for range min(configuration.Workers, len(pending)) {
 		workers.Add(1)
 		go func() {
 			defer workers.Done()
 			for file := range jobs {
-				if err := uploadOne(configuration, file); err != nil {
+				if _, err := client.Upload("mods/"+file.name, file.path, configuration.Token); err != nil {
 					errors <- err
 					continue
 				}
-				fmt.Printf("Uploaded %s\n", file.name)
+				fmt.Printf("UPLOAD %s\n", file.name)
 			}
 		}()
 	}
-	for _, file := range missing {
+	for _, file := range pending {
 		jobs <- file
 	}
 	close(jobs)
@@ -104,115 +91,45 @@ func UploadMissing(configuration Config) error {
 	return nil
 }
 
-func listRemote(configuration Config) (map[string]int64, error) {
-	client, closeClient, err := connect(configuration)
-	if err != nil {
-		return nil, err
+func listLocal(root string) ([]fileInfo, error) {
+	entries, err := os.ReadDir(root)
+	if os.IsNotExist(err) {
+		return []fileInfo{}, nil
 	}
-	defer closeClient()
-
-	entries, err := client.ReadDir(configuration.RemoteModsPath)
 	if err != nil {
-		return nil, fmt.Errorf("list remote mods: %w", err)
-	}
-	files := make(map[string]int64, len(entries))
-	for _, entry := range entries {
-		if entry.Mode().IsRegular() {
-			files[entry.Name()] = entry.Size()
-		}
-	}
-	return files, nil
-}
-
-func listLocal(directory string) ([]fileInfo, error) {
-	entries, err := os.ReadDir(directory)
-	if err != nil {
-		return nil, fmt.Errorf("list local mods: %w", err)
+		return nil, fmt.Errorf("read mods directory: %w", err)
 	}
 	files := make([]fileInfo, 0, len(entries))
 	for _, entry := range entries {
 		if !entry.Type().IsRegular() {
 			continue
 		}
-		info, err := entry.Info()
+		filePath := filepath.Join(root, entry.Name())
+		hash, err := sha1File(filePath)
 		if err != nil {
 			return nil, err
 		}
-		files = append(files, fileInfo{name: entry.Name(), size: info.Size()})
+		files = append(files, fileInfo{name: entry.Name(), path: filePath, hash: hash})
 	}
 	return files, nil
 }
 
-func uploadOne(configuration Config, file fileInfo) error {
-	client, closeClient, err := connect(configuration)
+func sha1File(path string) (string, error) {
+	file, err := os.Open(path)
 	if err != nil {
-		return err
+		return "", fmt.Errorf("open %s: %w", path, err)
 	}
-	defer closeClient()
-
-	source, err := os.Open(filepath.Join(configuration.LocalModsPath, file.name))
-	if err != nil {
-		return fmt.Errorf("open %s: %w", file.name, err)
+	defer file.Close()
+	digest := sha1.New() // #nosec G401 -- file-hosting protocol requires SHA-1.
+	if _, err := io.Copy(digest, file); err != nil {
+		return "", fmt.Errorf("hash %s: %w", path, err)
 	}
-	defer source.Close()
-
-	destination, err := client.Create(remotePath(configuration.RemoteModsPath, file.name))
-	if err != nil {
-		return fmt.Errorf("create remote %s: %w", file.name, err)
-	}
-	if _, err := io.Copy(destination, source); err != nil {
-		destination.Close()
-		return fmt.Errorf("upload %s: %w", file.name, err)
-	}
-	if err := destination.Close(); err != nil {
-		return fmt.Errorf("close remote %s: %w", file.name, err)
-	}
-	return nil
+	return hex.EncodeToString(digest.Sum(nil)), nil
 }
 
-func connect(configuration Config) (*sftp.Client, func(), error) {
-	privateKey, err := os.ReadFile(configuration.PrivateKeyPath)
-	if err != nil {
-		return nil, nil, fmt.Errorf("read SFTP private key: %w", err)
+func min(left, right int) int {
+	if left < right {
+		return left
 	}
-	signer, err := ssh.ParsePrivateKey(privateKey)
-	if err != nil {
-		return nil, nil, fmt.Errorf("parse SFTP private key: %w", err)
-	}
-	connection, err := ssh.Dial("tcp", net.JoinHostPort(configuration.Host, configuration.Port), &ssh.ClientConfig{
-		User:            configuration.User,
-		Auth:            []ssh.AuthMethod{ssh.PublicKeys(signer)},
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(), // Legacy tool had no host-key verification; configurable trust can be added without changing upload behavior.
-	})
-	if err != nil {
-		return nil, nil, fmt.Errorf("connect to SFTP: %w", err)
-	}
-	client, err := sftp.NewClient(connection)
-	if err != nil {
-		connection.Close()
-		return nil, nil, fmt.Errorf("create SFTP client: %w", err)
-	}
-	closeClient := func() {
-		client.Close()
-		connection.Close()
-	}
-	return client, closeClient, nil
-}
-
-func getEnv(key, fallback string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return fallback
-}
-
-func remotePath(directory, fileName string) string {
-	return strings.TrimRight(directory, "/") + "/" + fileName
-}
-
-func min(first, second int) int {
-	if first < second {
-		return first
-	}
-	return second
+	return right
 }

@@ -8,7 +8,7 @@
 | --- | --- |
 | Понять репозиторий и запустить проект | [development.md](development.md) |
 | Менять HTTP-server или Docker-образ | [file-hosting.md](file-hosting.md) |
-| Менять Windows-клиент, синхронизацию, self-update или SFTP | [mc-build-updater.md](mc-build-updater.md) |
+| Менять Windows-клиент, синхронизацию, self-update или REST-публикацию | [mc-build-updater.md](mc-build-updater.md) |
 | Менять взаимодействие server и client | [contracts.md](contracts.md) |
 
 ## Актуальный статус

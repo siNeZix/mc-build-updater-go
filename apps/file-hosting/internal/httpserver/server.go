@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"path"
@@ -17,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sinezix/mc-build-updater-go/file-hosting/internal/console"
 	"github.com/sinezix/mc-build-updater-go/file-hosting/internal/filemap"
 	"github.com/sinezix/mc-build-updater-go/file-hosting/internal/manifest"
 )
@@ -82,7 +82,7 @@ func (s *Service) Refresh() error {
 	if changed || version == "" {
 		payload, err := json.Marshal(entries)
 		if err != nil {
-			return fmt.Errorf("marshal file map: %w", err)
+			return fmt.Errorf("сериализовать карту файлов: %w", err)
 		}
 		digest := md5.Sum(payload) // #nosec G401 -- protocol compatibility with prior version route.
 		version = hex.EncodeToString(digest[:])[:6] + ":" + strconv.FormatInt(time.Now().UnixMilli(), 10)
@@ -94,7 +94,7 @@ func (s *Service) Refresh() error {
 	s.entries = entries
 	s.version = version
 	s.mu.Unlock()
-	log.Printf("files map updated: %d file(s)", len(entries))
+	console.Success("Карта файлов обновлена: %d", len(entries))
 	return nil
 }
 
@@ -139,25 +139,25 @@ func (s *Service) mapResponse(w http.ResponseWriter, r *http.Request) {
 
 func (s *Service) filterMap(entries []filemap.Entry, directory, branch string) ([]filemap.Entry, int, error) {
 	if directory != "" && !validRelativePath(directory) {
-		return nil, http.StatusBadRequest, fmt.Errorf("invalid dir query")
+		return nil, http.StatusBadRequest, fmt.Errorf("некорректный параметр dir")
 	}
 	allowedHashes := map[string]struct{}(nil)
 	if branch != "" {
 		if strings.ContainsAny(branch, `/\\`) || branch == "." || branch == ".." {
-			return nil, http.StatusBadRequest, fmt.Errorf("invalid branch query")
+			return nil, http.StatusBadRequest, fmt.Errorf("некорректный параметр branch")
 		}
 		contents, err := os.ReadFile(filepath.Join(s.root, "MM", branch+".json"))
 		if os.IsNotExist(err) {
-			return nil, http.StatusNotFound, fmt.Errorf("branch manifest not found")
+			return nil, http.StatusNotFound, fmt.Errorf("манифест ветки не найден")
 		}
 		if err != nil {
-			return nil, http.StatusInternalServerError, fmt.Errorf("read branch manifest: %w", err)
+			return nil, http.StatusInternalServerError, fmt.Errorf("прочитать манифест ветки: %w", err)
 		}
 		var mods []struct {
 			Hash string `json:"hash"`
 		}
 		if err := json.Unmarshal(contents, &mods); err != nil {
-			return nil, http.StatusConflict, fmt.Errorf("parse branch manifest: %w", err)
+			return nil, http.StatusConflict, fmt.Errorf("разобрать манифест ветки: %w", err)
 		}
 		allowedHashes = make(map[string]struct{}, len(mods))
 		for _, mod := range mods {
@@ -169,7 +169,7 @@ func (s *Service) filterMap(entries []filemap.Entry, directory, branch string) (
 		}
 		for hash := range allowedHashes {
 			if _, exists := present[hash]; !exists {
-				return nil, http.StatusConflict, fmt.Errorf("branch manifest references unavailable file %s", hash)
+				return nil, http.StatusConflict, fmt.Errorf("манифест ветки ссылается на недоступный файл %s", hash)
 			}
 		}
 	}
@@ -336,6 +336,6 @@ func validRelativePath(value string) bool {
 func writeJSON(w http.ResponseWriter, value any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	if err := json.NewEncoder(w).Encode(value); err != nil {
-		log.Printf("write JSON response: %v", err)
+		console.Warning("не удалось записать JSON-ответ: %v", err)
 	}
 }

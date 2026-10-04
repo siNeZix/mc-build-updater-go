@@ -3,10 +3,10 @@ package main
 import (
 	"flag"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 
+	"github.com/sinezix/mc-build-updater-go/mc-build-updater/internal/console"
 	"github.com/sinezix/mc-build-updater-go/mc-build-updater/internal/filehosting"
 	"github.com/sinezix/mc-build-updater-go/mc-build-updater/internal/uploader"
 )
@@ -22,13 +22,15 @@ func main() {
 	workers := flags.Int("workers", 8, "число параллельных загрузок")
 	_ = flags.Parse(os.Args[2:])
 	if *workers < 1 {
-		log.Fatal("workers должен быть положительным числом")
+		console.Error("число потоков должно быть положительным")
+		return
 	}
 	workingDirectory, err := os.Getwd()
 	if err != nil {
-		log.Fatal(err)
+		console.Error("не удалось определить рабочий каталог: %v", err)
+		return
 	}
 	if err := uploader.UploadMissing(uploader.Config{BaseURL: filehosting.URL(*development, *baseURL), Timeout: filehosting.Timeout(*development), Token: os.Getenv("FILE_HOSTING_TOKEN"), LocalModsPath: filepath.Join(workingDirectory, "mods"), Workers: *workers}); err != nil {
-		log.Fatal(err)
+		console.Error("не удалось загрузить моды: %v", err)
 	}
 }

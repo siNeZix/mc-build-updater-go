@@ -21,23 +21,23 @@ func LoadOrCreate(directory string) (Local, error) {
 		configuration := Local{Branch: "dead-inside-land"}
 		serialized, marshalErr := yaml.Marshal(configuration)
 		if marshalErr != nil {
-			return Local{}, fmt.Errorf("marshal default configuration: %w", marshalErr)
+			return Local{}, fmt.Errorf("сериализовать конфигурацию по умолчанию: %w", marshalErr)
 		}
 		if writeErr := os.WriteFile(path, serialized, 0o644); writeErr != nil {
-			return Local{}, fmt.Errorf("write default configuration: %w", writeErr)
+			return Local{}, fmt.Errorf("записать конфигурацию по умолчанию: %w", writeErr)
 		}
 		return configuration, nil
 	}
 	if err != nil {
-		return Local{}, fmt.Errorf("read configuration: %w", err)
+		return Local{}, fmt.Errorf("прочитать конфигурацию: %w", err)
 	}
 
 	var configuration Local
 	if err := yaml.Unmarshal(contents, &configuration); err != nil {
-		return Local{}, fmt.Errorf("parse configuration: %w", err)
+		return Local{}, fmt.Errorf("разобрать конфигурацию: %w", err)
 	}
 	if configuration.Branch == "" {
-		return Local{}, fmt.Errorf("configuration %s has an empty Branch", path)
+		return Local{}, fmt.Errorf("в конфигурации %s не указана ветка Branch", path)
 	}
 	return configuration, nil
 }

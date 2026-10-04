@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sinezix/mc-build-updater-go/mc-build-updater/internal/console"
 	"github.com/sinezix/mc-build-updater-go/mc-build-updater/internal/remote"
 )
 
@@ -29,7 +30,7 @@ type fileInfo struct {
 
 func UploadMissing(configuration Config) error {
 	if configuration.Token == "" {
-		return fmt.Errorf("FILE_HOSTING_TOKEN is required")
+		return fmt.Errorf("переменная окружения FILE_HOSTING_TOKEN не задана")
 	}
 	if configuration.Workers < 1 {
 		configuration.Workers = 1
@@ -62,10 +63,10 @@ func UploadMissing(configuration Config) error {
 		}
 	}
 	if len(pending) == 0 {
-		fmt.Println("Нет новых или изменённых модов.")
+		console.Success("Нет новых или изменённых модов.")
 		return nil
 	}
-	fmt.Printf("Загрузка %d мод(ов), потоков: %d\n", len(pending), min(configuration.Workers, len(pending)))
+	console.Info("Загрузка модов: %d; потоков: %d", len(pending), min(configuration.Workers, len(pending)))
 	jobs := make(chan fileInfo)
 	errors := make(chan error, len(pending))
 	var workers sync.WaitGroup
@@ -78,7 +79,7 @@ func UploadMissing(configuration Config) error {
 					errors <- err
 					continue
 				}
-				fmt.Printf("UPLOAD %s\n", file.name)
+				console.Action("Загрузка: %s", file.name)
 			}
 		}()
 	}
@@ -102,7 +103,7 @@ func listLocal(root string) ([]fileInfo, error) {
 		return []fileInfo{}, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("read mods directory: %w", err)
+		return nil, fmt.Errorf("прочитать каталог модов: %w", err)
 	}
 	files := make([]fileInfo, 0, len(entries))
 	for _, entry := range entries {
@@ -122,12 +123,12 @@ func listLocal(root string) ([]fileInfo, error) {
 func sha1File(path string) (string, error) {
 	file, err := os.Open(path)
 	if err != nil {
-		return "", fmt.Errorf("open %s: %w", path, err)
+		return "", fmt.Errorf("открыть %s: %w", path, err)
 	}
 	defer file.Close()
 	digest := sha1.New() // #nosec G401 -- file-hosting protocol requires SHA-1.
 	if _, err := io.Copy(digest, file); err != nil {
-		return "", fmt.Errorf("hash %s: %w", path, err)
+		return "", fmt.Errorf("вычислить хеш %s: %w", path, err)
 	}
 	return hex.EncodeToString(digest.Sum(nil)), nil
 }

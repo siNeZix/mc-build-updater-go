@@ -11,6 +11,7 @@ import (
 	"sort"
 	"sync"
 
+	"github.com/sinezix/mc-build-updater-go/mc-build-updater/internal/console"
 	"github.com/sinezix/mc-build-updater-go/mc-build-updater/internal/remote"
 )
 
@@ -59,9 +60,9 @@ func (s Synchronizer) Sync(branch string) (Result, error) {
 	result := Result{}
 	for _, mod := range local {
 		if _, exists := remoteHashes[mod.Hash]; !exists {
-			fmt.Printf("DELETE %s\n", filepath.Base(mod.Path))
+			console.Action("Удаление: %s", filepath.Base(mod.Path))
 			if err := os.Remove(mod.Path); err != nil && !os.IsNotExist(err) {
-				return Result{}, fmt.Errorf("delete obsolete mod %s: %w", mod.Path, err)
+				return Result{}, fmt.Errorf("удалить устаревший мод %s: %w", mod.Path, err)
 			}
 			result.Deleted++
 		}
@@ -77,7 +78,7 @@ func (s Synchronizer) Sync(branch string) (Result, error) {
 		return result, nil
 	}
 
-	fmt.Printf("Starting download of %d mod(s)\n", len(missing))
+	console.Info("Скачивание модов: %d", len(missing))
 	jobs := make(chan downloadJob)
 	errors := make(chan error, len(missing))
 	var workers sync.WaitGroup
@@ -123,7 +124,7 @@ func LocalMap(modsPath string) ([]LocalMod, error) {
 		return []LocalMod{}, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("read mods directory: %w", err)
+		return nil, fmt.Errorf("прочитать каталог модов: %w", err)
 	}
 
 	mods := make([]LocalMod, 0, len(entries))
@@ -134,7 +135,7 @@ func LocalMap(modsPath string) ([]LocalMod, error) {
 		path := filepath.Join(modsPath, entry.Name())
 		hash, err := SHA1(path)
 		if err != nil {
-			return nil, fmt.Errorf("checksum %s: %w", path, err)
+			return nil, fmt.Errorf("вычислить контрольную сумму %s: %w", path, err)
 		}
 		mods = append(mods, LocalMod{Hash: hash, Path: path})
 	}

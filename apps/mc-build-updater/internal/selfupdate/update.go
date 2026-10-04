@@ -194,7 +194,7 @@ func latestRelease(options Options) (release, error) {
 	if gitlabErr == nil {
 		return gitlabRelease, nil
 	}
-	return release{}, fmt.Errorf("GitHub: %v; GitLab: %w", githubErr, gitlabErr)
+	return release{}, fmt.Errorf("проверка обновлений: GitHub: %v; GitLab: %w", githubErr, gitlabErr)
 }
 
 func gitLabURL(options Options) string {
@@ -218,7 +218,7 @@ func githubLatest(client *http.Client, endpoint string) (release, error) {
 		return release{}, err
 	}
 	if response.Draft || response.Prerelease {
-		return release{}, fmt.Errorf("latest release не является стабильным")
+		return release{}, fmt.Errorf("последний release не является стабильным")
 	}
 	return makeRelease(response.TagName, githubAssets(response.Assets), "GitHub")
 }
@@ -275,7 +275,7 @@ func gitlabAssets(input []struct {
 func makeRelease(tag string, assets []asset, providerName string) (release, error) {
 	parsedVersion, ok := parseVersion(tag)
 	if !ok {
-		return release{}, fmt.Errorf("tag %q не соответствует стабильной версии vX.Y.Z", tag)
+		return release{}, fmt.Errorf("тег %q не соответствует стабильной версии vX.Y.Z", tag)
 	}
 	var executableURL, checksumURL string
 	for _, asset := range assets {
@@ -287,7 +287,7 @@ func makeRelease(tag string, assets []asset, providerName string) (release, erro
 		}
 	}
 	if executableURL == "" || checksumURL == "" {
-		return release{}, fmt.Errorf("release %s не содержит %s и %s", tag, executableName, checksumsName)
+		return release{}, fmt.Errorf("релиз %s не содержит %s и %s", tag, executableName, checksumsName)
 	}
 	if _, err := url.ParseRequestURI(executableURL); err != nil {
 		return release{}, fmt.Errorf("некорректная ссылка на %s: %w", executableName, err)

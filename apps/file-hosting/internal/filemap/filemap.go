@@ -25,15 +25,15 @@ type Entry struct {
 func Build(root string, skip func(string) bool) ([]Entry, error) {
 	absRoot, err := filepath.Abs(root)
 	if err != nil {
-		return nil, fmt.Errorf("resolve files root: %w", err)
+		return nil, fmt.Errorf("получить абсолютный путь каталога файлов: %w", err)
 	}
 
 	info, err := os.Stat(absRoot)
 	if err != nil {
-		return nil, fmt.Errorf("stat files root: %w", err)
+		return nil, fmt.Errorf("получить сведения о каталоге файлов: %w", err)
 	}
 	if !info.IsDir() {
-		return nil, fmt.Errorf("files root %q is not a directory", absRoot)
+		return nil, fmt.Errorf("путь к файлам %q не является каталогом", absRoot)
 	}
 
 	var entries []Entry
@@ -77,7 +77,7 @@ func Build(root string, skip func(string) bool) ([]Entry, error) {
 		return nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("scan files root: %w", err)
+		return nil, fmt.Errorf("просканировать каталог файлов: %w", err)
 	}
 
 	sort.Slice(entries, func(i, j int) bool {

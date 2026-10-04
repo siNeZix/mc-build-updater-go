@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/sinezix/mc-build-updater-go/mc-build-updater/internal/console"
 )
 
 type FileMap struct {
@@ -38,13 +40,13 @@ func NewWithTimeout(rawBaseURL string, timeout time.Duration) (*Client, error) {
 	}
 	baseURL, err := url.Parse(rawBaseURL)
 	if err != nil {
-		return nil, fmt.Errorf("parse file-hosting URL: %w", err)
+		return nil, fmt.Errorf("разобрать URL file-hosting: %w", err)
 	}
 	if baseURL.Scheme != "http" && baseURL.Scheme != "https" {
-		return nil, fmt.Errorf("file-hosting URL requires HTTP(S) scheme: %q", rawBaseURL)
+		return nil, fmt.Errorf("URL file-hosting должен использовать HTTP(S): %q", rawBaseURL)
 	}
 	if baseURL.Host == "" {
-		return nil, fmt.Errorf("file-hosting URL requires host: %q", rawBaseURL)
+		return nil, fmt.Errorf("в URL file-hosting отсутствует хост: %q", rawBaseURL)
 	}
 	if !strings.HasSuffix(baseURL.Path, "/") {
 		baseURL.Path += "/"
@@ -87,39 +89,39 @@ func (c *Client) Download(relativeURL, destination, prefix string) error {
 	if prefix != "" {
 		prefix = "[" + prefix + "] "
 	}
-	fmt.Printf("%s%s [%s]\n", prefix, requestURL, filepath.Base(destination))
+	console.Action("%s%s [%s]", prefix, requestURL, filepath.Base(destination))
 
 	response, err := c.http.Get(requestURL)
 	if err != nil {
-		return fmt.Errorf("download %s: %w", requestURL, err)
+		return fmt.Errorf("скачать %s: %w", requestURL, err)
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
-		return fmt.Errorf("download %s: HTTP %d", requestURL, response.StatusCode)
+		return fmt.Errorf("скачать %s: HTTP %d", requestURL, response.StatusCode)
 	}
 	if err := os.MkdirAll(filepath.Dir(destination), 0o755); err != nil {
-		return fmt.Errorf("create download directory: %w", err)
+		return fmt.Errorf("создать каталог для скачивания: %w", err)
 	}
 
 	temporaryFile, err := os.CreateTemp(filepath.Dir(destination), ".download-*")
 	if err != nil {
-		return fmt.Errorf("create temporary download: %w", err)
+		return fmt.Errorf("создать временный файл скачивания: %w", err)
 	}
 	temporaryPath := temporaryFile.Name()
 	defer os.Remove(temporaryPath)
 
 	if _, err := io.Copy(temporaryFile, response.Body); err != nil {
 		temporaryFile.Close()
-		return fmt.Errorf("write downloaded file: %w", err)
+		return fmt.Errorf("записать скачанный файл: %w", err)
 	}
 	if err := temporaryFile.Close(); err != nil {
-		return fmt.Errorf("close downloaded file: %w", err)
+		return fmt.Errorf("закрыть скачанный файл: %w", err)
 	}
 	if err := os.Remove(destination); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("replace download destination: %w", err)
+		return fmt.Errorf("заменить целевой файл: %w", err)
 	}
 	if err := os.Rename(temporaryPath, destination); err != nil {
-		return fmt.Errorf("move downloaded file into place: %w", err)
+		return fmt.Errorf("переместить скачанный файл: %w", err)
 	}
 	return nil
 }
@@ -136,17 +138,17 @@ func (c *Client) DownloadVerified(relativeURL, destination, prefix, expectedHash
 		return verifySHA1(destination, expectedHash)
 	}
 	if err := os.MkdirAll(filepath.Dir(destination), 0o755); err != nil {
-		return fmt.Errorf("create download directory: %w", err)
+		return fmt.Errorf("создать каталог для скачивания: %w", err)
 	}
 	temporary, err := os.CreateTemp(filepath.Dir(destination), ".download-*")
 	if err != nil {
-		return fmt.Errorf("create temporary download: %w", err)
+		return fmt.Errorf("создать временный файл скачивания: %w", err)
 	}
 	temporaryPath := temporary.Name()
 	defer os.Remove(temporaryPath) //nolint:errcheck
 	if err := temporary.Truncate(size); err != nil {
 		temporary.Close()
-		return fmt.Errorf("allocate temporary download: %w", err)
+		return fmt.Errorf("выделить место во временном файле: %w", err)
 	}
 	temporary.Close()
 
@@ -194,10 +196,10 @@ func (c *Client) DownloadVerified(relativeURL, destination, prefix, expectedHash
 		return err
 	}
 	if err := os.Remove(destination); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("replace download destination: %w", err)
+		return fmt.Errorf("заменить целевой файл: %w", err)
 	}
 	if err := os.Rename(temporaryPath, destination); err != nil {
-		return fmt.Errorf("move downloaded file into place: %w", err)
+		return fmt.Errorf("переместить скачанный файл: %w", err)
 	}
 	return nil
 }
@@ -205,22 +207,22 @@ func (c *Client) DownloadVerified(relativeURL, destination, prefix, expectedHash
 func (c *Client) Upload(relativePath, filePath, token string) (int, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
-		return 0, fmt.Errorf("open upload file: %w", err)
+		return 0, fmt.Errorf("открыть файл для загрузки: %w", err)
 	}
 	defer file.Close()
 	requestURL := c.resolve("api/files/") + (&url.URL{Path: relativePath}).EscapedPath()
 	request, err := http.NewRequest(http.MethodPut, requestURL, file)
 	if err != nil {
-		return 0, fmt.Errorf("create upload request: %w", err)
+		return 0, fmt.Errorf("создать запрос загрузки: %w", err)
 	}
 	request.Header.Set("Authorization", "Bearer "+token)
 	response, err := c.http.Do(request)
 	if err != nil {
-		return 0, fmt.Errorf("upload %s: %w", relativePath, err)
+		return 0, fmt.Errorf("загрузить %s: %w", relativePath, err)
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusCreated && response.StatusCode != http.StatusNoContent {
-		return 0, fmt.Errorf("upload %s: HTTP %d", relativePath, response.StatusCode)
+		return 0, fmt.Errorf("загрузить %s: HTTP %d", relativePath, response.StatusCode)
 	}
 	return response.StatusCode, nil
 }
@@ -233,22 +235,22 @@ func (c *Client) downloadRange(relativeURL, destination string, start, end, tota
 	request.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", start, end))
 	response, err := c.http.Do(request)
 	if err != nil {
-		return fmt.Errorf("download range: %w", err)
+		return fmt.Errorf("скачать диапазон: %w", err)
 	}
 	defer response.Body.Close()
 	if response.StatusCode == http.StatusOK {
-		return fmt.Errorf("range unsupported")
+		return fmt.Errorf("сервер не поддерживает частичное скачивание")
 	}
 	if response.StatusCode != http.StatusPartialContent {
-		return fmt.Errorf("download range: HTTP %d", response.StatusCode)
+		return fmt.Errorf("скачать диапазон: HTTP %d", response.StatusCode)
 	}
 	expectedRange := fmt.Sprintf("bytes %d-%d/%d", start, end, total)
 	if response.Header.Get("Content-Range") != expectedRange {
-		return fmt.Errorf("unexpected Content-Range %q", response.Header.Get("Content-Range"))
+		return fmt.Errorf("некорректный Content-Range %q", response.Header.Get("Content-Range"))
 	}
 	file, err := os.OpenFile(destination, os.O_WRONLY, 0)
 	if err != nil {
-		return fmt.Errorf("open temporary download: %w", err)
+		return fmt.Errorf("открыть временный файл скачивания: %w", err)
 	}
 	defer file.Close()
 	if _, err := file.Seek(start, io.SeekStart); err != nil {
@@ -278,14 +280,14 @@ func verifySHA1(filePath, expected string) error {
 
 func (c *Client) getJSON(relativeURL string, target any) error {
 	requestURL := c.resolve(relativeURL)
-	fmt.Println(requestURL)
+	console.Action("Проверка доступности: %s", requestURL)
 	response, err := c.http.Get(requestURL)
 	if err != nil {
-		return fmt.Errorf("request %s: %w", requestURL, err)
+		return fmt.Errorf("выполнить запрос %s: %w", requestURL, err)
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
-		return fmt.Errorf("request %s: HTTP %d", requestURL, response.StatusCode)
+		return fmt.Errorf("выполнить запрос %s: HTTP %d", requestURL, response.StatusCode)
 	}
 	if err := json.NewDecoder(response.Body).Decode(target); err != nil {
 		return fmt.Errorf("decode %s response: %w", requestURL, err)

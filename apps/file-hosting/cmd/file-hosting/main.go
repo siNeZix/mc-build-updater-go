@@ -2,26 +2,27 @@ package main
 
 import (
 	"flag"
-	"log"
 	"net/http"
 	"os"
 
+	"github.com/sinezix/mc-build-updater-go/file-hosting/internal/console"
 	"github.com/sinezix/mc-build-updater-go/file-hosting/internal/httpserver"
 )
 
 func main() {
 	addr := flag.String("addr", valueFromEnv("ADDR", ":1447"), "HTTP listen address")
-	filesPath := flag.String("files-path", valueFromEnv("FILES_PATH", "files"), "directory containing served files")
+	filesPath := flag.String("files-path", valueFromEnv("FILES_PATH", "files"), "каталог публикуемых файлов")
 	flag.Parse()
 
 	service, err := httpserver.New(*filesPath, os.Getenv("FILE_HOSTING_TOKEN"))
 	if err != nil {
-		log.Fatalf("initialize files map: %v", err)
+		console.Error("не удалось инициализировать карту файлов: %v", err)
+		return
 	}
 
-	log.Printf("file-hosting listening on %s, serving %s", *addr, service.Root())
+	console.Success("file-hosting запущен: %s; файлы: %s", *addr, service.Root())
 	if err := http.ListenAndServe(*addr, service.Handler()); err != nil {
-		log.Fatal(err)
+		console.Error("сервер остановлен с ошибкой: %v", err)
 	}
 }
 

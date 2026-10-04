@@ -13,6 +13,7 @@ import (
 
 	"github.com/sinezix/mc-build-updater-go/mc-build-updater/internal/branch"
 	"github.com/sinezix/mc-build-updater-go/mc-build-updater/internal/config"
+	"github.com/sinezix/mc-build-updater-go/mc-build-updater/internal/console"
 	"github.com/sinezix/mc-build-updater-go/mc-build-updater/internal/filehosting"
 	"github.com/sinezix/mc-build-updater-go/mc-build-updater/internal/modsync"
 	"github.com/sinezix/mc-build-updater-go/mc-build-updater/internal/remote"
@@ -36,38 +37,43 @@ func main() {
 	configureLog()
 	workingDirectory, err := os.Getwd()
 	if err != nil {
-		log.Fatal(err)
+		console.Error("не удалось определить рабочий каталог: %v", err)
+		return
 	}
 
 	if *applyUpdate {
 		if err := selfupdate.Apply(*updateTarget, *updateReplacement, *updateWorkingDirectory); err != nil {
-			log.Fatal(err)
+			console.Error("не удалось применить обновление: %v", err)
+			return
 		}
 		return
 	}
 	if *createModsMap {
 		entries, err := modsync.LocalMap(filepath.Join(workingDirectory, "mods"))
 		if err != nil {
-			log.Fatal(err)
+			console.Error("не удалось построить карту модов: %v", err)
+			return
 		}
 		if err := modsync.WriteJSON(filepath.Join(workingDirectory, "mm.json"), entries); err != nil {
-			log.Fatal(err)
+			console.Error("не удалось записать карту модов: %v", err)
+			return
 		}
 		return
 	}
 	if *updated && !*development {
 		executablePath, err := os.Executable()
 		if err != nil {
-			log.Printf("определить путь для очистки обновления: %v", err)
+			console.Warning("не удалось определить путь для очистки обновления: %v", err)
 		} else if err := selfupdate.Clean(executablePath); err != nil {
-			log.Printf("очистить временные файлы обновления: %v", err)
+			console.Warning("не удалось очистить временные файлы обновления: %v", err)
 		}
 	}
 
 	baseURL := filehosting.URL(*development, *fileHostingURL)
 	client, err := remote.NewWithTimeout(baseURL, filehosting.Timeout(*development))
 	if err != nil {
-		log.Fatal(err)
+		console.Error("не удалось загрузить конфигурацию: %v", err)
+		return
 	}
 
 	if !*development {
@@ -77,19 +83,21 @@ func main() {
 			WorkingDirectory: workingDirectory,
 		})
 		if err != nil {
-			log.Fatal(err)
+			console.Error("не удалось создать HTTP-клиент: %v", err)
+			return
 		}
 		if result.CheckError != nil {
-			log.Printf("не удалось проверить обновления: %v; продолжается текущая версия", result.CheckError)
+			console.Warning("не удалось проверить обновления: %v; используется текущая версия", result.CheckError)
 		}
 		if result.StartedReplacement {
-			log.Println("запущена замена клиента на новую версию")
+			console.Success("запущена замена клиента на новую версию")
 			return
 		}
 	}
 
 	if err := runSetup(workingDirectory, client, *development); err != nil {
-		log.Fatal(err)
+		console.Error("не удалось синхронизировать моды: %v", err)
+		return
 	}
 }
 
@@ -99,7 +107,7 @@ func runSetup(workingDirectory string, client *remote.Client, development bool) 
 		return err
 	}
 
-	fmt.Printf("Minecraft Mods Updater [%s]\n\n", version)
+	console.Info("Minecraft Mods Updater %s", version)
 	branch.Print(localConfig.Branch)
 	if delay := startupDelay(development); delay > 0 {
 		time.Sleep(delay)
@@ -107,7 +115,7 @@ func runSetup(workingDirectory string, client *remote.Client, development bool) 
 
 	modsPath := filepath.Join(workingDirectory, "mods")
 	if err := os.MkdirAll(modsPath, 0o755); err != nil {
-		return fmt.Errorf("create mods directory: %w", err)
+		return fmt.Errorf("создать каталог модов: %w", err)
 	}
 
 	synchronizer := modsync.New(client, modsPath, 10)
@@ -116,9 +124,9 @@ func runSetup(workingDirectory string, client *remote.Client, development bool) 
 		return err
 	}
 	if result.Downloaded == 0 && result.Deleted == 0 {
-		fmt.Println("All mods are already up to date.")
+		console.Success("Все моды уже актуальны.")
 	} else {
-		fmt.Printf("Done. Downloaded: %d, deleted: %d.\n", result.Downloaded, result.Deleted)
+		console.Success("Готово. Скачано: %d, удалено: %d.", result.Downloaded, result.Deleted)
 	}
 	if !development {
 		return selfupdate.Clean(workingDirectory)
@@ -136,7 +144,7 @@ func startupDelay(development bool) time.Duration {
 func configureLog() {
 	file, err := os.OpenFile("mc-mods-updater.log", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
-		log.Printf("open log file: %v", err)
+		console.Warning("не удалось открыть файл журнала: %v", err)
 		return
 	}
 	log.SetOutput(io.MultiWriter(os.Stderr, file))

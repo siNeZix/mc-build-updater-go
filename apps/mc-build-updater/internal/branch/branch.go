@@ -5,10 +5,10 @@ import "fmt"
 func Print(name string) {
 	switch name {
 	case "dead-inside-land":
-		fmt.Println("DEAD INSIDE LAND")
+		fmt.Println("Ветка: DEAD INSIDE LAND")
 	case "neko-land":
-		fmt.Println("NEKO LAND!")
+		fmt.Println("Ветка: NEKO LAND!")
 	default:
-		fmt.Printf("Branch: %s\n", name)
+		fmt.Printf("Ветка: %s\n", name)
 	}
 }

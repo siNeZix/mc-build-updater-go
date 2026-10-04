@@ -29,3 +29,9 @@ func TestTimeoutIsShortInDevelopment(t *testing.T) {
 		t.Fatalf("Timeout(true) = %s, ожидается 15s", got)
 	}
 }
+
+func TestTimeoutIsLongInProduction(t *testing.T) {
+	if got := Timeout(false); got != 15*time.Minute {
+		t.Fatalf("Timeout(false) = %s, ожидается 15m", got)
+	}
+}

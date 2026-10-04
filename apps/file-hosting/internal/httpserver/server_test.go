@@ -129,3 +129,107 @@ func TestFileWriteAPIAndRange(t *testing.T) {
 		t.Fatalf("DELETE: got %d", response.StatusCode)
 	}
 }
+
+func TestMapFiltersAndRejectsUnsafeQueries(t *testing.T) {
+	root := t.TempDir()
+	writeServerFile(t, filepath.Join(root, "mods", "a.jar"), "a")
+	writeServerFile(t, filepath.Join(root, "other", "b.jar"), "b")
+	writeServerFile(t, filepath.Join(root, "MM", "branch.json"), `[{"hash":"86f7e437faa5a7fce15d1ddcb9eaeaea377667b8"}]`)
+	service, err := New(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = service.Close() })
+	server := httptest.NewServer(service.Handler())
+	defer server.Close()
+
+	response, err := http.Get(server.URL + "/map?dir=mods&branch=branch")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	var entries []filemap.Entry
+	if err := json.NewDecoder(response.Body).Decode(&entries); err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusOK || len(entries) != 1 || entries[0].Name != "a.jar" {
+		t.Fatalf("фильтр карты: статус %d, записи %#v", response.StatusCode, entries)
+	}
+
+	for _, query := range []string{"?dir=../mods", "?branch=../branch"} {
+		response, err := http.Get(server.URL + "/map" + query)
+		if err != nil {
+			t.Fatal(err)
+		}
+		response.Body.Close()
+		if response.StatusCode != http.StatusBadRequest {
+			t.Fatalf("/map%s: статус %d, ожидается 400", query, response.StatusCode)
+		}
+	}
+
+	response, err = http.Get(server.URL + "/map?branch=missing")
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusNotFound {
+		t.Fatalf("отсутствующий manifest: статус %d", response.StatusCode)
+	}
+}
+
+func TestFilesAPIRequiresTokenAndHandlesMissingFile(t *testing.T) {
+	root := t.TempDir()
+	service, err := New(root, "secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = service.Close() })
+	server := httptest.NewServer(service.Handler())
+	defer server.Close()
+
+	request, err := http.NewRequest(http.MethodPut, server.URL+"/api/files/mods/new.jar", strings.NewReader("new"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("PUT без токена: статус %d", response.StatusCode)
+	}
+
+	request, err = http.NewRequest(http.MethodDelete, server.URL+"/api/files/mods/missing.jar", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Authorization", "Bearer secret")
+	response, err = http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusNotFound {
+		t.Fatalf("DELETE отсутствующего файла: статус %d", response.StatusCode)
+	}
+
+	response, err = http.Get(server.URL + "/mods/../secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusNotFound {
+		t.Fatalf("небезопасный download: статус %d", response.StatusCode)
+	}
+}
+
+func writeServerFile(t *testing.T, path, contents string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}

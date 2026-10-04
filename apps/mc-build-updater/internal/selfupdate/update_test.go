@@ -2,9 +2,11 @@ package selfupdate
 
 import (
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 )
 
@@ -50,6 +52,23 @@ func TestLatestReleaseFallsBackToGitLab(t *testing.T) {
 	}
 	if release.ProviderName != "GitLab" || release.Version.String() != "v2.0.0" {
 		t.Fatalf("получен release %+v, ожидается GitLab v2.0.0", release)
+	}
+}
+
+func TestLatestReleaseFallsBackForInvalidGitHubRelease(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/github":
+			_, _ = w.Write([]byte(`{"tag_name":"v1.2.3","prerelease":true,"assets":[]}`))
+		case "/gitlab":
+			_, _ = w.Write([]byte(`[{"tag_name":"v2.0.0","assets":{"links":[{"name":"mc-build-updater.exe","url":"https://example.test/updater.exe"},{"name":"checksums.txt","url":"https://example.test/checksums.txt"}]}}]`))
+		}
+	}))
+	defer server.Close()
+
+	release, err := latestRelease(Options{HTTPClient: server.Client(), GitHubURL: server.URL + "/github", GitLabURL: server.URL + "/gitlab"})
+	if err != nil || release.ProviderName != "GitLab" {
+		t.Fatalf("latestRelease = (%+v, %v)", release, err)
 	}
 }
 
@@ -116,5 +135,61 @@ func TestUpdateWorkingDirectory(t *testing.T) {
 	}
 	if got := updateWorkingDirectory("", `C:\programs\mc-build-updater.exe`); got != `C:\programs` {
 		t.Fatalf("рабочий каталог по умолчанию: %q", got)
+	}
+}
+
+func TestRunSkipsUnsupportedRuntimeAndDevelopmentVersion(t *testing.T) {
+	result, err := Run(Options{RuntimeOS: "linux", CurrentVersion: "v1.0.0"})
+	if err != nil || result != (Result{}) {
+		t.Fatalf("Run на linux = (%+v, %v)", result, err)
+	}
+	result, err = Run(Options{RuntimeOS: "windows", CurrentVersion: "dev"})
+	if err != nil || result != (Result{}) {
+		t.Fatalf("Run для dev = (%+v, %v)", result, err)
+	}
+}
+
+func TestRunReturnsCheckErrorWhenReleaseUnavailable(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "offline", http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+	result, err := Run(Options{
+		RuntimeOS:      "windows",
+		CurrentVersion: "v1.0.0",
+		HTTPClient:     server.Client(),
+		GitHubURL:      server.URL + "/github",
+		GitLabURL:      server.URL + "/gitlab",
+	})
+	if err != nil || result.CheckError == nil || result.StartedReplacement {
+		t.Fatalf("Run = (%+v, %v), ожидается CheckError", result, err)
+	}
+}
+
+func TestCleanAndApplyValidateInputs(t *testing.T) {
+	if err := Apply("", "", ""); err == nil {
+		t.Fatal("Apply с пустыми путями должен вернуть ошибку")
+	}
+	missing := "missing.exe"
+	if err := Clean(missing); err != nil && !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("Clean несуществующего пути: %v", err)
+	}
+}
+
+func TestHelpersValidateURLsAndCompareVersions(t *testing.T) {
+	for rawURL, want := range map[string]bool{
+		"https://example.test/file.exe": true,
+		"http://example.test/file.exe":  true,
+		"ftp://example.test/file.exe":   false,
+		"/relative/file.exe":            false,
+	} {
+		if got := isHTTPURL(rawURL); got != want {
+			t.Fatalf("isHTTPURL(%q) = %t, ожидается %t", rawURL, got, want)
+		}
+	}
+	older, _ := parseVersion("v1.2.3")
+	newer, _ := parseVersion("v1.3.0")
+	if older.compare(newer) >= 0 || newer.compare(older) <= 0 {
+		t.Fatal("сравнение версий неверно")
 	}
 }

@@ -19,10 +19,11 @@ Windows CLI синхронизирует плоский каталог `mods/` �
 
 | Приоритет | Значение |
 | --- | --- |
-| 1 | `--file-hosting-url <URL>` |
-| 2 | Dev: `http://localhost:1447/`; production: `http://mc.sinezix.ru:1447/` |
+| 1 | Dev (`--dev`): всегда `http://localhost:1447/` |
+| 2 | Production: `--file-hosting-url <URL>` |
+| 3 | Production default: `http://mc.sinezix.ru:1447/` |
 
-`MC_BU_FILE_HOSTING_URL` удалён.
+`MC_BU_FILE_HOSTING_URL` удалён. В `--dev` `--file-hosting-url` намеренно игнорируется: клиент не может обратиться к production server. Локальные HTTP-запросы ограничены 15 секундами; self-update, очистка файлов self-update и трёхсекундная стартовая пауза отключены. Ошибка отдельной параллельной загрузки не останавливает очередь работ, поэтому sync и REST-публикация не зависают.
 
 ## Self-update
 
@@ -79,6 +80,14 @@ cd apps/mc-build-updater
 $env:FILE_HOSTING_TOKEN = '...'
 .\build\mc-bu-utils.exe upload-mods --file-hosting-url http://host:1447/ --workers 8
 ```
+
+Для локальной публикации запусти server с тем же `FILE_HOSTING_TOKEN`, затем:
+
+```powershell
+.\build\mc-bu-utils.exe upload-mods --dev --workers 8
+```
+
+`--dev` всегда использует `http://localhost:1447/` и игнорирует `--file-hosting-url`; токен остаётся обязательным, чтобы локальный режим не ослаблял авторизацию REST API.
 
 Команда сканирует только прямые регулярные файлы в `mods/`, получает `/map`, вычисляет SHA-1 и отправляет `PUT /api/files/mods/<name>` только для новых или изменённых файлов. Удаления на server не выполняет. Токен обязателен и передаётся как Bearer.
 

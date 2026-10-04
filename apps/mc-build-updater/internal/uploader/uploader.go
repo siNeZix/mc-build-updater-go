@@ -8,12 +8,14 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/sinezix/mc-build-updater-go/mc-build-updater/internal/remote"
 )
 
 type Config struct {
 	BaseURL       string
+	Timeout       time.Duration
 	Token         string
 	LocalModsPath string
 	Workers       int
@@ -32,7 +34,10 @@ func UploadMissing(configuration Config) error {
 	if configuration.Workers < 1 {
 		configuration.Workers = 1
 	}
-	client, err := remote.New(configuration.BaseURL)
+	if configuration.Timeout <= 0 {
+		configuration.Timeout = 15 * time.Minute
+	}
+	client, err := remote.NewWithTimeout(configuration.BaseURL, configuration.Timeout)
 	if err != nil {
 		return err
 	}

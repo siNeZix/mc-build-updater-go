@@ -29,6 +29,13 @@ type Client struct {
 }
 
 func New(rawBaseURL string) (*Client, error) {
+	return NewWithTimeout(rawBaseURL, 15*time.Minute)
+}
+
+func NewWithTimeout(rawBaseURL string, timeout time.Duration) (*Client, error) {
+	if timeout <= 0 {
+		timeout = 15 * time.Minute
+	}
 	baseURL, err := url.Parse(rawBaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("parse file-hosting URL: %w", err)
@@ -44,7 +51,7 @@ func New(rawBaseURL string) (*Client, error) {
 	}
 	return &Client{
 		baseURL: baseURL,
-		http:    &http.Client{Timeout: 15 * time.Minute},
+		http:    &http.Client{Timeout: timeout},
 	}, nil
 }
 
@@ -162,7 +169,6 @@ func (c *Client) DownloadVerified(relativeURL, destination, prefix, expectedHash
 			for block := range jobs {
 				if err := c.downloadRange(relativeURL, temporaryPath, block.start, block.end, size); err != nil {
 					errors <- err
-					return
 				}
 			}
 		}()

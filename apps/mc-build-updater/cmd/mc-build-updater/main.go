@@ -13,6 +13,7 @@ import (
 
 	"github.com/sinezix/mc-build-updater-go/mc-build-updater/internal/branch"
 	"github.com/sinezix/mc-build-updater-go/mc-build-updater/internal/config"
+	"github.com/sinezix/mc-build-updater-go/mc-build-updater/internal/filehosting"
 	"github.com/sinezix/mc-build-updater-go/mc-build-updater/internal/modsync"
 	"github.com/sinezix/mc-build-updater-go/mc-build-updater/internal/remote"
 	"github.com/sinezix/mc-build-updater-go/mc-build-updater/internal/selfupdate"
@@ -54,7 +55,7 @@ func main() {
 		}
 		return
 	}
-	if *updated {
+	if *updated && !*development {
 		executablePath, err := os.Executable()
 		if err != nil {
 			log.Printf("определить путь для очистки обновления: %v", err)
@@ -63,8 +64,8 @@ func main() {
 		}
 	}
 
-	baseURL := selectFileHostingURL(*development, *fileHostingURL)
-	client, err := remote.New(baseURL)
+	baseURL := filehosting.URL(*development, *fileHostingURL)
+	client, err := remote.NewWithTimeout(baseURL, filehosting.Timeout(*development))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -87,12 +88,12 @@ func main() {
 		}
 	}
 
-	if err := runSetup(workingDirectory, client); err != nil {
+	if err := runSetup(workingDirectory, client, *development); err != nil {
 		log.Fatal(err)
 	}
 }
 
-func runSetup(workingDirectory string, client *remote.Client) error {
+func runSetup(workingDirectory string, client *remote.Client, development bool) error {
 	localConfig, err := config.LoadOrCreate(workingDirectory)
 	if err != nil {
 		return err
@@ -100,7 +101,9 @@ func runSetup(workingDirectory string, client *remote.Client) error {
 
 	fmt.Printf("Minecraft Mods Updater [%s]\n\n", version)
 	branch.Print(localConfig.Branch)
-	time.Sleep(3 * time.Second)
+	if delay := startupDelay(development); delay > 0 {
+		time.Sleep(delay)
+	}
 
 	modsPath := filepath.Join(workingDirectory, "mods")
 	if err := os.MkdirAll(modsPath, 0o755); err != nil {
@@ -117,17 +120,17 @@ func runSetup(workingDirectory string, client *remote.Client) error {
 	} else {
 		fmt.Printf("Done. Downloaded: %d, deleted: %d.\n", result.Downloaded, result.Deleted)
 	}
-	return selfupdate.Clean(workingDirectory)
+	if !development {
+		return selfupdate.Clean(workingDirectory)
+	}
+	return nil
 }
 
-func selectFileHostingURL(development bool, explicit string) string {
-	if explicit != "" {
-		return explicit
-	}
+func startupDelay(development bool) time.Duration {
 	if development {
-		return "http://localhost:1447/"
+		return 0
 	}
-	return "http://mc.sinezix.ru:1447/"
+	return 3 * time.Second
 }
 
 func configureLog() {

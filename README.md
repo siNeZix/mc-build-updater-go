@@ -44,10 +44,10 @@ Routes retained from the TypeScript service:
 
 At first run, updater creates `mc-mods-updater.config.yml` beside its working directory. Its default branch is `dead-inside-land`.
 
-Production file-hosting URL defaults to `http://mc.sinezix.ru:1447/`. Use `--file-hosting-url` to override it. `make dev-client` always uses `http://localhost:1447/`.
+Production file-hosting URL defaults to `http://mc.sinezix.ru:1447/`. Use `--file-hosting-url` to override it. `make dev-client` and `--dev` always use `http://localhost:1447/`, ignoring `--file-hosting-url`.
 
 ## Client releases
 
 Push a stable tag `vX.Y.Z` to both remotes. GitHub Actions and GitLab CI independently build `windows/amd64` `mc-build-updater.exe`, generate `checksums.txt`, and publish releases. The installed client checks GitHub first, then GitLab when GitHub cannot supply a valid release.
 
-`mc-bu-utils.exe upload-mods [workers]` uploads missing local mod files over SFTP. Configure it using `MC_BU_SFTP_HOST`, `MC_BU_SFTP_USER`, `MC_BU_SFTP_KEY_PATH`, `MC_BU_SFTP_REMOTE_MODS_PATH`, and `MC_BU_MODS_PATH`.
+`mc-bu-utils.exe upload-mods` publishes missing local mods through REST. Use `--dev` for localhost; it still requires `FILE_HOSTING_TOKEN` configured on local server.

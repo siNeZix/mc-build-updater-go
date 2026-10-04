@@ -38,7 +38,7 @@ make dev-client
 ```
 
 - Запускается **нативно** с флагом `--dev`.
-- В dev автоматически использует `http://localhost:1447/` и не выполняет self-update.
+- В dev всегда использует `http://localhost:1447/`, даже если передан `--file-hosting-url`; self-update, его очистка и стартовая пауза отключены, HTTP timeout — 15 секунд.
 - Working directory — `apps/mc-build-updater`; там создаются runtime-файлы и каталог `mods/`.
 
 ### Оба приложения

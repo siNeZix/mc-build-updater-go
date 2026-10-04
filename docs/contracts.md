@@ -8,9 +8,9 @@
 | --- | --- |
 | Dev (`--dev`) | `http://localhost:1447/` |
 | Production | `http://mc.sinezix.ru:1447/` |
-| Переопределение | только `--file-hosting-url <URL>` |
+| Переопределение | только production: `--file-hosting-url <URL>` |
 
-Клиент нормализует отсутствие завершающего `/`. `MC_BU_FILE_HOSTING_URL` не поддерживается.
+Клиент нормализует отсутствие завершающего `/`. В `--dev` `--file-hosting-url` игнорируется, поэтому localhost обязателен. `MC_BU_FILE_HOSTING_URL` не поддерживается.
 
 ## Публичное чтение
 

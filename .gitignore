@@ -2,6 +2,7 @@
 /build/
 .env
 !.env.example
+/deploy/.env
 bin/
 tmp/
 coverage.out
@@ -33,6 +34,11 @@ apps/mc-build-updater/release/
 
 # Runtime SQLite map of file-hosting.
 apps/file-hosting/files/.file-hosting.sqlite*
+
+# Локальные моды и манифесты в file-hosting не должны попадать в production deploy.
+apps/file-hosting/files/MM/*
+!apps/file-hosting/files/MM/.gitkeep
+apps/file-hosting/files/mods/
 
 # Исполняемые файлы и архивы release не попадают в репозиторий.
 *.exe

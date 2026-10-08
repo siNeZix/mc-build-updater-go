@@ -68,6 +68,31 @@ func TestBranchModsMapSendsQueryParameters(t *testing.T) {
 	}
 }
 
+func TestBranchDirectoryMapSendsRequestedDirectory(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/map" {
+			t.Fatalf("путь запроса = %q, ожидается /map", request.URL.Path)
+		}
+		if got := request.URL.Query().Get("dir"); got != "resourcepacks" {
+			t.Fatalf("параметр dir = %q, ожидается resourcepacks", got)
+		}
+		if got := request.URL.Query().Get("branch"); got != "dead-inside-land" {
+			t.Fatalf("параметр branch = %q", got)
+		}
+		response.Header().Set("Content-Type", "application/json")
+		_, _ = response.Write([]byte("[]"))
+	}))
+	defer server.Close()
+
+	client, err := NewWithTimeout(server.URL, time.Second)
+	if err != nil {
+		t.Fatalf("NewWithTimeout: %v", err)
+	}
+	if _, err := client.BranchDirectoryMap("dead-inside-land", "resourcepacks"); err != nil {
+		t.Fatalf("BranchDirectoryMap: %v", err)
+	}
+}
+
 func TestNewWithTimeoutValidatesAndNormalizesURL(t *testing.T) {
 	for _, rawURL := range []string{"", "ftp://example.test", "http:///missing-host"} {
 		if _, err := NewWithTimeout(rawURL, time.Second); err == nil {

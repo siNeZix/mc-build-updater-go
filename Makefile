@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help dev-c dev-s build build-c build-s start-c start-c-dev start-s start-s-dev test test-c test-s fmt fmt-c fmt-s
+.PHONY: help dev-c dev-s build build-c build-s start-c start-c-dev start-s start-s-dev deploy test test-c test-s fmt fmt-c fmt-s
 
 CLIENT_VERSION ?= dev
 CLIENT_LDFLAGS := -X main.version=$(CLIENT_VERSION)
@@ -9,7 +9,11 @@ help:
 	@echo "Development: make dev-s | dev-c"
 	@echo "Build:       make build-s | build-c | build"
 	@echo "Run:         make start-s | start-c | start-s-dev | start-c-dev"
+	@echo "Deploy:      make deploy"
 	@echo "Quality:     make test-s | test-c | test | fmt-s | fmt-c | fmt"
+
+deploy:
+	powershell -NoProfile -ExecutionPolicy Bypass -File deploy/deploy.ps1
 
 # Native development. Air is fetched and cached by Go; no global install needed.
 dev-s:

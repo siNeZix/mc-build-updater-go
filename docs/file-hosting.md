@@ -10,7 +10,7 @@
 | Каталог файлов | `-files-path` / `FILES_PATH` | `files` (production `/data`) |
 | Токен записи | `FILE_HOSTING_TOKEN` | пусто, запись отключена |
 
-Production Compose передаёт `FILE_HOSTING_TOKEN` из окружения host.
+Production Compose передаёт `FILE_HOSTING_TOKEN` из окружения host. Контейнер запускается от `root`, чтобы SQLite-карта в bind mount `./files` могла создаваться на host-каталоге с владельцем `root`.
 
 При обычном запуске `file-hosting.exe` загружает `.env` из каталога рядом с executable. Цели `make` загружают `.env` из корня репозитория.
 

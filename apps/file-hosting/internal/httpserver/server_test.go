@@ -1,6 +1,8 @@
 package httpserver
 
 import (
+	"crypto/sha1"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -13,6 +15,47 @@ import (
 
 	"github.com/sinezix/mc-build-updater-go/file-hosting/internal/filemap"
 )
+
+func TestFilesAPIReplacesExistingFile(t *testing.T) {
+	root := t.TempDir()
+	mods := filepath.Join(root, "mods")
+	if err := os.Mkdir(mods, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(mods, "example.jar")
+	if err := os.WriteFile(path, []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	service, err := New(root, "test-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer service.Close()
+	server := httptest.NewServer(service.Handler())
+	defer server.Close()
+
+	request, err := http.NewRequest(http.MethodPut, server.URL+"/api/files/mods/example.jar", strings.NewReader("new"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Authorization", "Bearer test-token")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusNoContent {
+		t.Fatalf("?????? ?????? = %d", response.StatusCode)
+	}
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(contents) != "new" {
+		t.Fatalf("?????????? ????? = %q", contents)
+	}
+}
 
 func TestMapAndDownloadRoutes(t *testing.T) {
 	root := t.TempDir()
@@ -71,6 +114,64 @@ func TestMapAndDownloadRoutes(t *testing.T) {
 	if !regexp.MustCompile(`^[a-f0-9]{6}:\d+$`).MatchString(version) {
 		t.Fatalf("unexpected version: %q", version)
 	}
+}
+
+func TestMapBranchFiltersResourceAndShaderPacks(t *testing.T) {
+	root := t.TempDir()
+	for fileName, contents := range map[string]string{
+		"resourcepacks/pack.zip": "resource pack",
+		"shaderpacks/shader.zip": "shader pack",
+	} {
+		path := filepath.Join(root, filepath.FromSlash(fileName))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	resourceHash := sha1Hex([]byte("resource pack"))
+	shaderHash := sha1Hex([]byte("shader pack"))
+	manifestPath := filepath.Join(root, "MM", "branch.json")
+	if err := os.MkdirAll(filepath.Dir(manifestPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	manifest := `[{"hash":"` + resourceHash + `","path":"resourcepacks/pack.zip"},{"hash":"` + shaderHash + `","path":"shaderpacks/shader.zip"}]`
+	if err := os.WriteFile(manifestPath, []byte(manifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	service, err := New(root, "test-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer service.Close()
+	server := httptest.NewServer(service.Handler())
+	defer server.Close()
+
+	for directory, expectedName := range map[string]string{
+		"resourcepacks": "pack.zip",
+		"shaderpacks":   "shader.zip",
+	} {
+		response, err := http.Get(server.URL + "/map?dir=" + directory + "&branch=branch")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var entries []filemap.Entry
+		err = json.NewDecoder(response.Body).Decode(&entries)
+		response.Body.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(entries) != 1 || entries[0].Dir != directory || entries[0].Name != expectedName {
+			t.Fatalf("%s: записи = %#v", directory, entries)
+		}
+	}
+}
+
+func sha1Hex(contents []byte) string {
+	digest := sha1.Sum(contents)
+	return hex.EncodeToString(digest[:])
 }
 
 func TestFileWriteAPIAndRange(t *testing.T) {

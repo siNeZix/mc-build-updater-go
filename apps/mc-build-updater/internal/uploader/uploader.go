@@ -15,17 +15,124 @@ import (
 )
 
 type Config struct {
-	BaseURL       string
-	Timeout       time.Duration
-	Token         string
-	LocalModsPath string
-	Workers       int
+	BaseURL                string
+	Timeout                time.Duration
+	Token                  string
+	LocalModsPath          string
+	LocalResourcePacksPath string
+	LocalShaderPacksPath   string
+	Workers                int
 }
 
 type fileInfo struct {
-	name string
-	path string
-	hash string
+	directory string
+	name      string
+	path      string
+	hash      string
+}
+
+func UploadManifest(configuration Config, branch string) error {
+	if configuration.Token == "" {
+		return fmt.Errorf("переменная окружения FILE_HOSTING_TOKEN не задана")
+	}
+	if err := validateBranch(branch); err != nil {
+		return err
+	}
+	if configuration.Timeout <= 0 {
+		configuration.Timeout = 15 * time.Minute
+	}
+	client, err := remote.NewWithTimeout(configuration.BaseURL, configuration.Timeout)
+	if err != nil {
+		return err
+	}
+	files, err := listContent(configuration)
+	if err != nil {
+		return err
+	}
+	manifest := make([]remote.ManifestEntry, 0, len(files))
+	for _, file := range files {
+		manifest = append(manifest, remote.ManifestEntry{Hash: file.hash, Path: filepath.ToSlash(filepath.Join(file.directory, file.name))})
+	}
+	if _, err := client.UploadManifest(branch, manifest, configuration.Token); err != nil {
+		return err
+	}
+	console.Success("Манифест ветки %s обновлён: %d файлов.", branch, len(manifest))
+	return nil
+}
+
+func UploadBranch(configuration Config, branch string) error {
+	if configuration.Token == "" {
+		return fmt.Errorf("переменная окружения FILE_HOSTING_TOKEN не задана")
+	}
+	if err := validateBranch(branch); err != nil {
+		return err
+	}
+	if configuration.Workers < 1 {
+		configuration.Workers = 1
+	}
+	if configuration.Timeout <= 0 {
+		configuration.Timeout = 15 * time.Minute
+	}
+	client, err := remote.NewWithTimeout(configuration.BaseURL, configuration.Timeout)
+	if err != nil {
+		return err
+	}
+	files, err := listContent(configuration)
+	if err != nil {
+		return err
+	}
+	if err := uploadFiles(client, files, configuration); err != nil {
+		return err
+	}
+	return UploadManifest(configuration, branch)
+}
+
+func uploadFiles(client *remote.Client, files []fileInfo, configuration Config) error {
+	if len(files) == 0 {
+		return nil
+	}
+	console.Info("Загрузка модов: %d; потоков: %d", len(files), min(configuration.Workers, len(files)))
+	jobs := make(chan fileInfo)
+	errors := make(chan error, len(files))
+	var workers sync.WaitGroup
+	for range min(configuration.Workers, len(files)) {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			for file := range jobs {
+				if _, err := client.Upload(filepath.ToSlash(filepath.Join(file.directory, file.name)), file.path, configuration.Token); err != nil {
+					errors <- err
+					continue
+				}
+				console.Action("Загружен: %s", filepath.ToSlash(filepath.Join(file.directory, file.name)))
+			}
+		}()
+	}
+	for _, file := range files {
+		jobs <- file
+	}
+	close(jobs)
+	workers.Wait()
+	close(errors)
+	var failures []error
+	for err := range errors {
+		failures = append(failures, err)
+	}
+	if len(failures) > 0 {
+		return fmt.Errorf("не удалось загрузить моды: %w", failures[0])
+	}
+	return nil
+}
+
+func ListBranches(configuration Config) ([]string, error) {
+	if configuration.Timeout <= 0 {
+		configuration.Timeout = 15 * time.Minute
+	}
+	client, err := remote.NewWithTimeout(configuration.BaseURL, configuration.Timeout)
+	if err != nil {
+		return nil, err
+	}
+	return client.ListBranches()
 }
 
 func UploadMissing(configuration Config) error {
@@ -120,6 +227,44 @@ func listLocal(root string) ([]fileInfo, error) {
 	return files, nil
 }
 
+func listContent(configuration Config) ([]fileInfo, error) {
+	paths := []struct {
+		directory string
+		path      string
+	}{
+		{directory: "mods", path: configuration.LocalModsPath},
+		{directory: "resourcepacks", path: resourcePacksPath(configuration)},
+		{directory: "shaderpacks", path: shaderPacksPath(configuration)},
+	}
+
+	var files []fileInfo
+	for _, content := range paths {
+		entries, err := listLocal(content.path)
+		if err != nil {
+			return nil, err
+		}
+		for index := range entries {
+			entries[index].directory = content.directory
+		}
+		files = append(files, entries...)
+	}
+	return files, nil
+}
+
+func resourcePacksPath(configuration Config) string {
+	if configuration.LocalResourcePacksPath != "" {
+		return configuration.LocalResourcePacksPath
+	}
+	return filepath.Join(filepath.Dir(configuration.LocalModsPath), "resourcepacks")
+}
+
+func shaderPacksPath(configuration Config) string {
+	if configuration.LocalShaderPacksPath != "" {
+		return configuration.LocalShaderPacksPath
+	}
+	return filepath.Join(filepath.Dir(configuration.LocalModsPath), "shaderpacks")
+}
+
 func sha1File(path string) (string, error) {
 	file, err := os.Open(path)
 	if err != nil {
@@ -138,4 +283,11 @@ func min(left, right int) int {
 		return left
 	}
 	return right
+}
+
+func validateBranch(branch string) error {
+	if branch == "" || branch == "." || branch == ".." || filepath.Base(branch) != branch || filepath.Ext(branch) != "" {
+		return fmt.Errorf("некорректное имя ветки: %q", branch)
+	}
+	return nil
 }

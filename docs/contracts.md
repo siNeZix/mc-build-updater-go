@@ -29,6 +29,8 @@
 
 При отсутствующем JSON манифеста ветки `/map?branch=` возвращает `404`; при ссылке на несуществующий hash — `409`. Небезопасные query-параметры — `400`.
 
+Манифест ветки `MM/<branch>.json` — JSON-массив объектов с `hash` и `path`. `path` задаёт тематическую зону и имя файла: `mods/<name>`, `resourcepacks/<name>` или `shaderpacks/<name>`. При запросах с `branch` server отбирает файлы по `hash`, а `dir` ограничивает их тематическим каталогом.
+
 Выдача файлов поддерживает стандартный `Range`. Корректный запрос `Range: bytes=start-end` получает `206 Partial Content`, `Content-Range` и `Accept-Ranges`.
 
 ### `FileMap`

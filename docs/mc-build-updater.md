@@ -1,6 +1,6 @@
 # Mc-build-updater (client)
 
-Windows CLI синхронизирует плоский каталог `mods/` с выбранной веткой Minecraft-сборки, обновляет свой `.exe` из GitHub/GitLab Releases и публикует моды через REST API.
+Windows CLI синхронизирует плоские каталоги `mods/`, `resourcepacks/` и `shaderpacks/` с выбранной веткой Minecraft-сборки, обновляет свой `.exe` из GitHub/GitLab Releases и публикует файлы сборки через REST API.
 
 Это отдельный Go-модуль. Зависимости не переносятся в `file-hosting`.
 
@@ -9,13 +9,28 @@ Windows CLI синхронизирует плоский каталог `mods/` �
 | Путь | Ответственность |
 | --- | --- |
 | `cmd/mc-build-updater/` | Основной CLI и sync/self-update. |
-| `cmd/mc-bu-utils/` | REST-команда `upload-mods`. |
+| `cmd/mc-bu-utils/` | REST-команды `upload-mods`, `upload` и `upload-manifest`. |
 | `internal/config/` | Локальный YAML-конфиг ветки. |
 | `internal/remote/` | HTTP-клиент, обычные и Range-загрузки. |
 | `internal/modsync/` | Локальная SHA-1 карта, удаление и загрузка модов. |
 | `internal/uploader/` | Сравнение `/map` и REST-публикация модов. |
 
 ## URL file-hosting
+
+## Утилита публикации
+
+Рядом с утилитой используются каталоги `mods/`, `resourcepacks/` и `shaderpacks/`. Доступны команды:
+
+```powershell
+mc-bu-utils.exe upload
+mc-bu-utils.exe upload <branch>
+mc-bu-utils.exe upload-manifest <branch>
+mc-bu-utils.exe upload-mods --workers 8
+```
+
+`upload` без ветки выводит опубликованные ветки. С именем ветки команда загружает файлы из `mods/`, `resourcepacks/` и `shaderpacks/` в одноимённые папки server, затем полностью заменяет `MM/<branch>.json` общим локальным манифестом. `upload-manifest` обновляет только общий манифест. `upload-mods` сохранён для совместимости и работает только с `mods/`. `--workers` задаёт число параллельных загрузок.
+
+При синхронизации updater удаляет устаревшие файлы только из `mods/`. Ресурспаки и шейдерпаки, которых нет в манифесте, остаются локально; недостающие опубликованные файлы скачиваются в `resourcepacks/` и `shaderpacks/`.
 
 | Приоритет | Значение |
 | --- | --- |

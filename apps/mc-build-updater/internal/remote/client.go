@@ -1,6 +1,7 @@
 package remote
 
 import (
+	"bytes"
 	"crypto/sha1"
 	"encoding/hex"
 	"encoding/json"
@@ -10,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -23,6 +25,11 @@ type FileMap struct {
 	Name string `json:"name"`
 	Hash string `json:"hash"`
 	Size int64  `json:"size"`
+}
+
+type ManifestEntry struct {
+	Hash string `json:"hash"`
+	Path string `json:"path"`
 }
 
 type Client struct {
@@ -65,12 +72,59 @@ func (c *Client) ModsMap(branch string) ([]Mod, error) {
 	return entries, nil
 }
 
+func (c *Client) ListBranches() ([]string, error) {
+	entries, err := c.FileMap()
+	if err != nil {
+		return nil, err
+	}
+	branches := make(map[string]struct{})
+	for _, entry := range entries {
+		if entry.Dir != "MM" || filepath.Ext(entry.Name) != ".json" {
+			continue
+		}
+		branches[strings.TrimSuffix(entry.Name, filepath.Ext(entry.Name))] = struct{}{}
+	}
+	result := make([]string, 0, len(branches))
+	for branch := range branches {
+		result = append(result, branch)
+	}
+	sort.Strings(result)
+	return result, nil
+}
+
+func (c *Client) UploadManifest(branch string, manifest []ManifestEntry, token string) (int, error) {
+	payload, err := json.Marshal(manifest)
+	if err != nil {
+		return 0, fmt.Errorf("сериализовать манифест ветки: %w", err)
+	}
+	requestURL := c.resolve("api/files/") + (&url.URL{Path: "MM/" + branch + ".json"}).EscapedPath()
+	request, err := http.NewRequest(http.MethodPut, requestURL, bytes.NewReader(payload))
+	if err != nil {
+		return 0, fmt.Errorf("создать запрос манифеста: %w", err)
+	}
+	request.Header.Set("Authorization", "Bearer "+token)
+	request.Header.Set("Content-Type", "application/json")
+	response, err := c.http.Do(request)
+	if err != nil {
+		return 0, fmt.Errorf("загрузить манифест %s: %w", branch, err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusCreated && response.StatusCode != http.StatusNoContent {
+		return response.StatusCode, fmt.Errorf("загрузить манифест %s: HTTP %d", branch, response.StatusCode)
+	}
+	return response.StatusCode, nil
+}
+
 func (c *Client) FileMap() ([]FileMap, error) {
 	return c.fileMap("")
 }
 
 func (c *Client) BranchModsMap(branch string) ([]FileMap, error) {
-	return c.fileMap("map?dir=mods&branch=" + url.QueryEscape(branch))
+	return c.BranchDirectoryMap(branch, "mods")
+}
+
+func (c *Client) BranchDirectoryMap(branch, directory string) ([]FileMap, error) {
+	return c.fileMap("map?dir=" + url.QueryEscape(directory) + "&branch=" + url.QueryEscape(branch))
 }
 
 func (c *Client) fileMap(relativeURL string) ([]FileMap, error) {

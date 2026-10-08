@@ -29,9 +29,10 @@ type Service struct {
 	token    string
 	store    *manifest.Store
 
-	mu      sync.RWMutex
-	entries []filemap.Entry
-	version string
+	mu        sync.RWMutex
+	refreshMu sync.Mutex
+	entries   []filemap.Entry
+	version   string
 }
 
 func New(root, token string) (*Service, error) {
@@ -67,6 +68,12 @@ func (s *Service) Handler() http.Handler {
 }
 
 func (s *Service) Refresh() error {
+	s.refreshMu.Lock()
+	defer s.refreshMu.Unlock()
+	return s.refresh()
+}
+
+func (s *Service) refresh() error {
 	entries, err := filemap.Build(s.root, manifest.DatabaseFiles(s.database))
 	if err != nil {
 		return err
@@ -261,6 +268,9 @@ func (s *Service) filesAPI(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Service) putFile(w http.ResponseWriter, r *http.Request, target string) {
+	s.refreshMu.Lock()
+	defer s.refreshMu.Unlock()
+
 	_, statErr := os.Stat(target)
 	existed := statErr == nil
 	if statErr != nil && !os.IsNotExist(statErr) {
@@ -293,12 +303,12 @@ func (s *Service) putFile(w http.ResponseWriter, r *http.Request, target string)
 		identical = hashErr == nil && oldHash == newHash
 	}
 	if !identical {
-		if err := os.Rename(temporaryPath, target); err != nil {
+		if err := replaceFile(temporaryPath, target); err != nil {
 			http.Error(w, fmt.Sprintf("replace file: %v", err), http.StatusInternalServerError)
 			return
 		}
 	}
-	if err := s.Refresh(); err != nil {
+	if err := s.refresh(); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -309,7 +319,20 @@ func (s *Service) putFile(w http.ResponseWriter, r *http.Request, target string)
 	}
 }
 
+func replaceFile(source, target string) error {
+	if err := os.Remove(target); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("remove old file: %w", err)
+	}
+	if err := os.Rename(source, target); err != nil {
+		return fmt.Errorf("rename temporary file: %w", err)
+	}
+	return nil
+}
+
 func (s *Service) deleteFile(w http.ResponseWriter, target string) {
+	s.refreshMu.Lock()
+	defer s.refreshMu.Unlock()
+
 	if err := os.Remove(target); os.IsNotExist(err) {
 		http.Error(w, "file not found", http.StatusNotFound)
 		return
@@ -317,7 +340,7 @@ func (s *Service) deleteFile(w http.ResponseWriter, target string) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if err := s.Refresh(); err != nil {
+	if err := s.refresh(); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

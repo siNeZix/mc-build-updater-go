@@ -26,28 +26,55 @@ type Result struct {
 }
 
 type Synchronizer struct {
-	remote      *remote.Client
-	modsPath    string
-	maxParallel int
+	remote            *remote.Client
+	modsPath          string
+	resourcePacksPath string
+	shaderPacksPath   string
+	maxParallel       int
 }
 
 func New(client *remote.Client, modsPath string, maxParallel int) Synchronizer {
 	if maxParallel < 1 {
 		maxParallel = 1
 	}
-	return Synchronizer{remote: client, modsPath: modsPath, maxParallel: maxParallel}
+	root := filepath.Dir(modsPath)
+	return Synchronizer{
+		remote:            client,
+		modsPath:          modsPath,
+		resourcePacksPath: filepath.Join(root, "resourcepacks"),
+		shaderPacksPath:   filepath.Join(root, "shaderpacks"),
+		maxParallel:       maxParallel,
+	}
 }
 
 func (s Synchronizer) Sync(branch string) (Result, error) {
-	local, err := LocalMap(s.modsPath)
+	mods, err := s.syncDirectory(branch, "mods", s.modsPath, true)
 	if err != nil {
 		return Result{}, err
 	}
-	downloadMap, err := s.remote.BranchModsMap(branch)
+	resourcePacks, err := s.syncDirectory(branch, "resourcepacks", s.resourcePacksPath, false)
 	if err != nil {
 		return Result{}, err
 	}
+	shaderPacks, err := s.syncDirectory(branch, "shaderpacks", s.shaderPacksPath, false)
+	if err != nil {
+		return Result{}, err
+	}
+	return Result{
+		Downloaded: mods.Downloaded + resourcePacks.Downloaded + shaderPacks.Downloaded,
+		Deleted:    mods.Deleted + resourcePacks.Deleted + shaderPacks.Deleted,
+	}, nil
+}
 
+func (s Synchronizer) syncDirectory(branch, directory, localPath string, removeStale bool) (Result, error) {
+	local, err := LocalMap(localPath)
+	if err != nil {
+		return Result{}, err
+	}
+	downloadMap, err := s.remote.BranchDirectoryMap(branch, directory)
+	if err != nil {
+		return Result{}, err
+	}
 	remoteHashes := make(map[string]struct{}, len(downloadMap))
 	for _, file := range downloadMap {
 		remoteHashes[file.Hash] = struct{}{}
@@ -58,13 +85,15 @@ func (s Synchronizer) Sync(branch string) (Result, error) {
 	}
 
 	result := Result{}
-	for _, mod := range local {
-		if _, exists := remoteHashes[mod.Hash]; !exists {
-			console.Action("Удаление: %s", filepath.Base(mod.Path))
-			if err := os.Remove(mod.Path); err != nil && !os.IsNotExist(err) {
-				return Result{}, fmt.Errorf("удалить устаревший мод %s: %w", mod.Path, err)
+	if removeStale {
+		for _, file := range local {
+			if _, exists := remoteHashes[file.Hash]; !exists {
+				console.Action("Удаление: %s", filepath.Base(file.Path))
+				if err := os.Remove(file.Path); err != nil && !os.IsNotExist(err) {
+					return Result{}, fmt.Errorf("удалить устаревший файл %s: %w", file.Path, err)
+				}
+				result.Deleted++
 			}
-			result.Deleted++
 		}
 	}
 
@@ -78,7 +107,7 @@ func (s Synchronizer) Sync(branch string) (Result, error) {
 		return result, nil
 	}
 
-	console.Info("Скачивание модов: %d", len(missing))
+	console.Info("Скачивание из %s: %d", directory, len(missing))
 	jobs := make(chan downloadJob)
 	errors := make(chan error, len(missing))
 	var workers sync.WaitGroup
@@ -87,7 +116,7 @@ func (s Synchronizer) Sync(branch string) (Result, error) {
 		go func() {
 			defer workers.Done()
 			for job := range jobs {
-				if err := s.remote.DownloadVerified("mods/"+job.file.Hash, filepath.Join(s.modsPath, job.file.Name), job.label, job.file.Hash, job.file.Size); err != nil {
+				if err := s.remote.DownloadVerified(directory+"/"+job.file.Hash, filepath.Join(localPath, job.file.Name), job.label, job.file.Hash, job.file.Size); err != nil {
 					errors <- err
 				}
 			}

@@ -3,6 +3,7 @@ package uploader
 import (
 	"crypto/sha1"
 	"encoding/hex"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -13,11 +14,82 @@ import (
 	"time"
 )
 
+func TestUploadBranchUploadsContentBeforeManifest(t *testing.T) {
+	root := t.TempDir()
+	modsPath := filepath.Join(root, "mods")
+	resourcePacksPath := filepath.Join(root, "resourcepacks")
+	shaderPacksPath := filepath.Join(root, "shaderpacks")
+	writeLocal(t, filepath.Join(modsPath, "example.jar"), "example")
+	writeLocal(t, filepath.Join(resourcePacksPath, "pack.zip"), "pack")
+	writeLocal(t, filepath.Join(shaderPacksPath, "shader.zip"), "shader")
+	var manifest []struct {
+		Hash string `json:"hash"`
+		Path string `json:"path"`
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/map":
+			_, _ = w.Write([]byte("[]"))
+		case "/api/files/mods/example.jar":
+			assertToken(t, r)
+			w.WriteHeader(http.StatusCreated)
+		case "/api/files/resourcepacks/pack.zip":
+			assertToken(t, r)
+			w.WriteHeader(http.StatusCreated)
+		case "/api/files/shaderpacks/shader.zip":
+			assertToken(t, r)
+			w.WriteHeader(http.StatusCreated)
+		case "/api/files/MM/test.json":
+			assertToken(t, r)
+			if err := json.NewDecoder(r.Body).Decode(&manifest); err != nil {
+				t.Fatal(err)
+			}
+			w.WriteHeader(http.StatusCreated)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	if err := UploadBranch(Config{
+		BaseURL:                server.URL,
+		Timeout:                time.Second,
+		Token:                  "secret",
+		LocalModsPath:          modsPath,
+		LocalResourcePacksPath: resourcePacksPath,
+		LocalShaderPacksPath:   shaderPacksPath,
+		Workers:                2,
+	}, "test"); err != nil {
+		t.Fatalf("UploadBranch: %v", err)
+	}
+	if len(manifest) != 3 {
+		t.Fatalf("манифест = %#v", manifest)
+	}
+	manifestPaths := map[string]string{}
+	for _, entry := range manifest {
+		manifestPaths[entry.Path] = entry.Hash
+	}
+	if manifestPaths["mods/example.jar"] != hash("example") ||
+		manifestPaths["resourcepacks/pack.zip"] != hash("pack") ||
+		manifestPaths["shaderpacks/shader.zip"] != hash("shader") {
+		t.Fatalf("манифест = %#v", manifest)
+	}
+}
+
+func TestUploadManifestRejectsUnsafeBranch(t *testing.T) {
+	err := UploadManifest(Config{Token: "secret"}, "../unsafe")
+	if err == nil {
+		t.Fatal("UploadManifest должен отклонить небезопасное имя ветки")
+	}
+}
+
 func TestUploadMissingUploadsOnlyNewOrChangedMods(t *testing.T) {
 	root := t.TempDir()
 	writeLocal(t, filepath.Join(root, "same.jar"), "same")
 	writeLocal(t, filepath.Join(root, "changed.jar"), "changed")
 	writeLocal(t, filepath.Join(root, "new.jar"), "new")
+	writeLocal(t, filepath.Join(filepath.Dir(root), "resourcepacks", "ignored.zip"), "resource pack")
+	writeLocal(t, filepath.Join(filepath.Dir(root), "shaderpacks", "ignored.zip"), "shader pack")
 	if err := os.Mkdir(filepath.Join(root, "nested"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -48,7 +120,15 @@ func TestUploadMissingUploadsOnlyNewOrChangedMods(t *testing.T) {
 	}))
 	defer server.Close()
 
-	err := UploadMissing(Config{BaseURL: server.URL, Timeout: time.Second, Token: "secret", LocalModsPath: root, Workers: 2})
+	err := UploadMissing(Config{
+		BaseURL:                server.URL,
+		Timeout:                time.Second,
+		Token:                  "secret",
+		LocalModsPath:          root,
+		LocalResourcePacksPath: filepath.Join(filepath.Dir(root), "resourcepacks"),
+		LocalShaderPacksPath:   filepath.Join(filepath.Dir(root), "shaderpacks"),
+		Workers:                2,
+	})
 	if err != nil {
 		t.Fatalf("UploadMissing: %v", err)
 	}
@@ -101,6 +181,9 @@ func assertToken(t *testing.T, r *http.Request) {
 
 func writeLocal(t *testing.T, path, contents string) {
 	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
 		t.Fatal(err)
 	}

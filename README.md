@@ -27,7 +27,10 @@ make start-s         # build and run file-hosting natively
 make start-c         # build and run updater executable
 make start-s-dev     # native file-hosting without Air (same options as start-s)
 make start-c-dev     # native updater with --dev, without Air
+make deploy          # sync project and redeploy production server
 ```
+
+Production deploy is configured in `deploy/.env`. `make deploy` uses fixed `rclone sync`, then rebuilds and recreates server Docker Compose stack over SSH. Details: [`deploy/README.md`](deploy/README.md).
 
 ## File-hosting data
 

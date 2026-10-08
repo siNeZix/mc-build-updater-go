@@ -41,7 +41,7 @@ make dev-c
 
 - Запускается **нативно** с флагом `--dev`.
 - В dev всегда использует `http://localhost:1447/`, даже если передан `--file-hosting-url`; self-update, его очистка и стартовая пауза отключены, HTTP timeout — 15 секунд.
-- Working directory — `apps/mc-build-updater`; там создаются runtime-файлы и каталог `mods/`.
+- Working directory — `apps/mc-build-updater`; там создаются runtime-файлы и каталоги `mods/`, `resourcepacks/`, `shaderpacks/`.
 - `dev-c` запускай после `dev-s`: клиент выполняет синхронизацию и завершается, а Air остаётся наблюдать за исходниками для следующего запуска после их изменения.
 
 ## Тесты и статический анализ
@@ -88,6 +88,18 @@ make start-s-dev
 - Server слушает порт `1447` и использует публикуемые файлы из `apps/file-hosting/files/`.
 - Docker в Makefile не используется. Для ручного Compose-развёртывания выполни `docker compose -f apps/file-hosting/compose.yaml up --detach --build`.
 
+### Production deploy
+
+Полный production-деплой из корня репозитория:
+
+```powershell
+Copy-Item deploy/.env.example deploy/.env
+# заполни deploy/.env
+make deploy
+```
+
+Настройки rclone, remote-пути и SSH находятся в `deploy/.env`. Скрипт использует фиксированный `rclone sync`, затем выполняет по SSH `docker compose down`, `docker compose build --pull --build-arg GOPROXY=...`, `docker compose up -d --force-recreate --remove-orphans` и `docker compose ps`. При сетевой недоступности `proxy.golang.org` внутри Docker задай в `deploy/.env` `DEPLOY_GOPROXY=https://goproxy.cn`. Подробнее: [`../deploy/README.md`](../deploy/README.md).
+
 Проверка:
 
 ```powershell
@@ -109,7 +121,7 @@ build/client/mc-build-updater.exe
 build/client/mc-bu-utils.exe
 ```
 
-`make start-c` сначала пересобирает клиент, затем запускает `.exe` с working directory `apps/mc-build-updater`: runtime-файлы и `mods/` остаются в каталоге приложения.
+`make start-c` сначала пересобирает клиент, затем запускает `.exe` с working directory `apps/mc-build-updater`: runtime-файлы, `mods/`, `resourcepacks/` и `shaderpacks/` остаются в каталоге приложения.
 
 `make start-c-dev` запускает тот же binary с `--dev`, но без Air: client использует `http://localhost:1447/`, отключает self-update и стартовую паузу.
 
